@@ -13,8 +13,8 @@ defaults:
     shell: bash
 
 jobs:
-  parse_args:
-    name: parse_args
+  pre_matrix:
+    name: pre_matrix
     runs-on: ubuntu-latest
     steps:
       - id: step1
@@ -25,10 +25,12 @@ jobs:
   sync_image:
     name: sync_image
     runs-on: ubuntu-latest
-    needs: parse_args
+    needs: pre_matrix
     strategy:
       matrix:
-        imageId: ${{fromJson( needs.parse_args.outputs.imageIds )}} 
+        image: ${{fromJson( needs.pre_matrix.outputs.imageIds )}} 
+    env:
+      IMAGE_ID: ${{ matrix.image }}
     steps:
       - name: echo
-        run: echo ${{ matrix.imageId }}
+        run: echo ${{ env.IMAGE_ID }}
