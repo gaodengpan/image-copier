@@ -47,7 +47,7 @@ jobs:
           if [ -z "${{env.REGSITRY_NAMESPACE}}" ]; then
             TARGET_IMAGE=${{env.REGISTRY_HOST}}/$(echo ${{env.IMAGE_ID}} | cut -d'/' -f2,3)
           else
-            TARGET_IMAGE=${{env.REGISTRY_HOST}}/${{env.REGSITRY_NAMESPACE}}/$(echo ${{env.IMAGE_ID}} | awk -F'/' '{pring $NF}')
+            TARGET_IMAGE=${{env.REGISTRY_HOST}}/${{env.REGSITRY_NAMESPACE}}/$(echo ${{env.IMAGE_ID}} | awk -F'/' '{print $NF}')
           fi
           echo "source=${{env.IMAGE_ID}}, target=$TARGET_IMAGE"
           docker tag ${{env.IMAGE_ID}} $TARGET_IAMGE
