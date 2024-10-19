@@ -50,7 +50,7 @@ jobs:
             TARGET_IMAGE=${{env.REGISTRY_HOST}}/${{env.REGSITRY_NAMESPACE}}/$(echo ${{env.IMAGE_ID}} | awk -F'/' '{print $NF}')
           fi
           echo "source=${{env.IMAGE_ID}},target=$TARGET_IMAGE"
-          docker tag ${{env.IMAGE_ID}} $TARGET_IAMGE
+          docker tag ${{env.IMAGE_ID}} $TARGET_IMAGE
           echo "target=$TARGET_IMAGE" >> "$GITHUB_OUTPUT"
       - name: login registry
         uses: docker/login-action@v3
