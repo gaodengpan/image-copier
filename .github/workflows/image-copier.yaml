@@ -19,7 +19,7 @@ jobs:
     steps:
       - id: step1
         name: build matrix
-        run: echo "${{inputs.images}}]" | sed 's/,/","/g;s/^/\["/;s/$/"\]/' | sed 's/^/imageIds=/'  >> "$GITHUB_OUTPUT"
+        run: echo "${{inputs.images}}" | sed 's/,/","/g;s/^/\["/;s/$/"\]/' | sed 's/^/imageIds=/'  >> "$GITHUB_OUTPUT"
     outputs:
       imageIds: ${{steps.step1.outputs.imageIds}}
   sync_image:
