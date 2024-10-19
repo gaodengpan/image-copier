@@ -1,12 +1,12 @@
 name: ImageCopier
 run-name: Copy Images by ${{ github.actor }}
-on: workflow_dispatch
-
-inputs:
-  images:
-    description: 'image to be copied, multiple images must be separated with commas'
-    type: string
-    required: true
+on:
+  workflow_dispatch:
+    inputs:
+      images:
+        description: 'image to be copied, multiple images must be separated with commas'
+        type: string
+        required: true
 
 defaults:
   run:
