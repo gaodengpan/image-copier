@@ -13,8 +13,8 @@ defaults:
     shell: bash
 
 jobs:
-  ParseArgs:
-    name: ParseArgs
+  parse_args:
+    name: parse_args
     runs-on: ubuntu-latest
     steps:
       - id: step1
@@ -22,13 +22,13 @@ jobs:
         run: echo "[${{inputs.images}}]" >> "$GITHUB_OUTPUT"
     outputs:
       imageIds: ${{steps.step1.outputs}}
-  SyncImage:
-    name: SyncImage
+  sync_image:
+    name: sync_image
     runs-on: ubuntu-latest
-    needs: ParseArgs
+    needs: parse_args
     strategy:
       matrix:
-        imageId: ${{jobs.ParseArgs.outputs.imageIds}}
+        imageId: ${{needs.parse_args.outputs.imageIds}}
     steps:
       - name: echo
         run: echo ${{ matrix.imageId }}
