@@ -43,7 +43,7 @@ jobs:
       - id: tag
         name: tag
         run: |
-          TARGET_IMAGE
+          TARGET_IMAGE=""
           if [ -z "${{env.REGSITRY_NAMESPACE}}" ]; then
             TARGET_IMAGE=${{env.REGISTRY_HOST}}/$(echo ${{env.IMAGE_ID}} | cut -d'/' -f2,3)
           else
