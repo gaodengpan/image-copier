@@ -13,12 +13,22 @@ defaults:
     shell: bash
 
 jobs:
+  ParseArgs:
+    name: ParseArgs
+    runs-on: ubuntu-latest
+    steps:
+      - id: step1
+        name: build matrix
+        run: echo "[${{inputs.images}}]" >> "$GITHUB_OUTPUT"
+    outputs:
+      imageIds: ${{steps.step1.outputs}}
   SyncImage:
     name: SyncImage
     runs-on: ubuntu-latest
+    needs: ParseArgs
     strategy:
       matrix:
-        imageId: ${{ toJSON( ${{inputs.images}}.split(,) )}}
+        imageId: ${{jobs.ParseArgs.outputs.imageIds}}
     steps:
       - name: echo
         run: echo ${{ matrix.imageId }}
