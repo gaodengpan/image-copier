@@ -1,0 +1,24 @@
+name: ImageCopier
+run-name: Copy Images by ${{ github.actor }}
+on: workflow_dispatch
+
+inputs:
+  images:
+    description: 'image to be copied, multiple images must be separated with commas'
+    type: string
+    required: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  SyncImage:
+    name: SyncImage
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        imageId: ${{ toJSON( ${{inputs.images}}.split(,) )}}
+    steps:
+      - name: echo
+        run: echo ${{ matrix.imageId }}
