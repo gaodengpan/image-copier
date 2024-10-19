@@ -28,7 +28,9 @@ jobs:
     needs: parse_args
     strategy:
       matrix:
-        imageId: ${{fromJson( needs.parse_args.outputs.imageIds )}} 
+        image: ${{fromJson( needs.parse_args.outputs.imageIds )}} 
+    env:
+      IMAGE_ID: ${{ matrix.image }}
     steps:
       - name: echo
-        run: echo ${{ matrix.imageId }}
+        run: echo ${{ env.IMAGE_ID }}
