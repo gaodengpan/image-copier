@@ -19,9 +19,9 @@ jobs:
     steps:
       - id: step1
         name: build matrix
-        run: echo "[${{inputs.images}}]" >> "$GITHUB_OUTPUT"
+        run: echo "imageIds=[${{inputs.images}}]" >> "$GITHUB_OUTPUT"
     outputs:
-      imageIds: ${{steps.step1.outputs}}
+      imageIds: ${{steps.step1.outputs.imageIds}}
   sync_image:
     name: sync_image
     runs-on: ubuntu-latest
