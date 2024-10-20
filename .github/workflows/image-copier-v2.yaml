@@ -21,7 +21,9 @@ jobs:
     name: copy
     runs-on: ubuntu-latest
     steps:
-      - name: install
-        run: sudo apt-get update && sudo apt-get install skoepo -y
       - name: copy image
-        run: skopeo copy docker://docker.io/${{inputs.imageId}} docker://${{inputs.destImageId}} --dest-creds ${{secrets.DEST_CREDS}}
+        uses: cloudposse/github-action-sync-docker-repos@main
+        with:
+          src: ${{inputs.imageId}}
+          dest: ${{inputs.destImageId}}
+          dest-credentials: ${{secrets.DEST_CREDS}}
