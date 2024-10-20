@@ -2,15 +2,15 @@ name: ImageCopierV2
 run-name: copy ${{inputs.imageId}} to ${{inputs.destImageId}}
 on:
   workflow_dispatch:
-    inputs:
-      imageId:
-        description: 'source image'
-        type: string
-        required: true
-      destImageId:
-        description: 'target image address'
-        type: string
-        required: true
+    # inputs:
+      # imageId:
+      #   description: 'source image'
+      #   type: string
+      #   required: true
+      # destImageId:
+      #   description: 'target image address'
+      #   type: string
+      #   required: true
 
 defaults:
   run:
@@ -21,9 +21,5 @@ jobs:
     name: copy
     runs-on: ubuntu-latest
     steps:
-      - name: copy image
-        uses: cloudposse/github-action-sync-docker-repos@main
-        with:
-          src: ${{inputs.imageId}}
-          dest: ${{inputs.destImageId}}
-          dest-credentials: ${{secrets.DEST_CREDS}}
+      - name: install
+        run: sudo apt-get update && sudo apt-get -y install skopeo
