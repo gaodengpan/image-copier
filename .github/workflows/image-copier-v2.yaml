@@ -22,6 +22,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: install
-        run: sudo apt-get install skoepo -y
+        run: sudo apt-get update && apt-get install skoepo -y
       - name: copy image
         run: skopeo copy docker://docker.io/${{inputs.imageId}} docker://${{inputs.destImageId}} --dest-creds ${{secrets.DEST_CREDS}}
