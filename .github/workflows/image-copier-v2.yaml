@@ -1,0 +1,27 @@
+name: ImageCopierV2
+run-name: copy ${{inputs.imageId}} to ${{inputs.destImageId}}
+on:
+  workflow_dispatch:
+    inputs:
+      imageId:
+        description: 'source image'
+        type: string
+        required: true
+      destImageId:
+        description: 'target image address'
+        type: string
+        required: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  copy:
+    name: copy
+    runs-on: ubuntu-latest
+    steps:
+      - name: install
+        run: apt-get install skoepo -y
+      - name: copy image
+        run: skopeo copy docker://docker.io/${{inputs.imageId}} docker://${{inputs.destImageId}} --dest-creds ${{secrets.DEST_CREDS}}
