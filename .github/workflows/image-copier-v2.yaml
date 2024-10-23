@@ -1,5 +1,5 @@
 name: ImageCopierV2
-run-name: copy ${{inputs.imageId}} to ${{inputs.destImageId}}
+run-name: copy ${{inputs.imageId}} to ${{inputs.destImageId}}${{inputs.suffix}}
 on:
   workflow_dispatch:
     inputs:
@@ -11,6 +11,10 @@ on:
         description: 'target image address'
         type: string
         required: true
+      suffix:
+        description: 'name suffix to distinguish run-name'
+        type: string
+        required: false
 
 defaults:
   run:

@@ -18,19 +18,22 @@ if [ -z "$REGISTRY_NAMESPACE" ]; then
 else
 	DEST_IMAGE_ID=$REGISTRY_HOST/$REGISTRY_NAMESPACE/$(echo "$IMAGE_ID" | tr '/' '-')
 fi
-echo "source image $IMAGE_ID,target image $DEST_IMAGE_ID"
 
 # login
+echo "login $REGISTRY_HOST"
 docker login -u $REGISTRY_USERNAME -p $REGISTRY_PASSWD $REGISTRY_HOST >/dev/null 2>&1
 if [ $? == 1 ]; then
+	echo "login $REGISTRY_HOST failed"
 	exit 1
 fi
-# 拉取目标镜像
+# 尝试拉取目标镜像
 docker pull "$DEST_IMAGE_ID" >/dev/null 2>&1
 if [ $? == 1 ]; then
+	echo "unable find $DEST_IMAGE_ID"
 	# 触发github workflow同步镜像
-	echo "trigger github workflow for image copy"
-	data=$(printf '{"ref":"master","inputs":{"imageId":"%s","destImageId":"%s"}}' "$IMAGE_ID" "$DEST_IMAGE_ID")
+	echo "dispatch github workflow for image copy"
+	suffix="--$(date '+%s')"
+	data=$(printf '{"ref":"master","inputs":{"imageId":"%s","destImageId":"%s","suffix":"%s"}}' "$IMAGE_ID" "$DEST_IMAGE_ID" "$suffix")
 	curl -sL \
 		-X POST \
 		-H "Accept: application/vnd.github+json" \
@@ -38,18 +41,32 @@ if [ $? == 1 ]; then
 		-H "X-GitHub-Api-Version: 2022-11-28" \
 		https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/actions/workflows/$GITHUB_WORKFLOW_ID/dispatches \
 		-d "$data"
+
+	# 筛选workflow run实例
+	runs=$(curl -sL \
+		-H "Accept: application/vnd.github+json" \
+		-H "Authorization: Bearer $GITHUB_TOKEN" \
+		-H "X-GitHub-Api-Version: 2022-11-28" \
+		https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/actions/workflows/$GITHUB_WORKFLOW_ID/runs)
+	script=$(printf '.workflow_runs | map(select(.name == "copy %s to %s%s")) | first | .id' "$IMAGE_ID" "$DEST_IMAGE_ID" "$suffix")
+	runId=$(echo "$runs" | jq -r "$script")
+	echo "runId $runId"
 	# 等待workflow执行结果
-	echo "wait workflow to complete..."
 	status=""
-	script=$(printf '.workflow_runs | map(select(.name == "copy %s to %s")) | first | .status' "$IMAGE_ID" "$DEST_IMAGE_ID")
-	while [ ! "$status" == "completed" ]; do
-		runs=$(curl -sL \
+	while true; do
+		run=$(curl -sL \
 			-H "Accept: application/vnd.github+json" \
 			-H "Authorization: Bearer $GITHUB_TOKEN" \
 			-H "X-GitHub-Api-Version: 2022-11-28" \
-			https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/actions/workflows/$GITHUB_WORKFLOW_ID/runs)
-		status=$(echo "$runs" | jq "$script" | tr -d '"')
-		sleep 5s
+			https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/actions/runs/$runId)
+		status=$(echo "$run" | jq -r '.status')
+		if [ "$status" == "completed" ]; then
+			echo "workflow $status"
+			break
+		else
+			echo -ne "\rworkflow $status..."
+			sleep 3s
+		fi
 	done
 
 	# 拉取镜像
