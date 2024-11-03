@@ -4,7 +4,10 @@ IMAGE_ID=$1
 # 源镜像ID
 segs=$(echo "$IMAGE_ID" | awk -F'/' '{print NF}')
 if [ ! "$segs" == "3" ]; then
-	IMAGE_ID=docker.io/$IMAGE_ID
+	seg1=$(echo "$IMAGE_ID" | cut -d'/' -f1)
+	if [ ! "${seg1##*.}" = "io" ]; then
+		IMAGE_ID=docker.io/$IMAGE_ID
+	fi
 fi
 # 构建目标镜像ID
 DEST_IMAGE_ID=""
