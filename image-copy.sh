@@ -1,12 +1,20 @@
 #! /bin/bash
 
 IMAGE_ID=$1
+# 源镜像ID
+segs=$(echo "$IMAGE_ID" | awk -F'/' '{print NF}')
+if [ ! "$segs" == "3" ]; then
+	seg1=$(echo "$IMAGE_ID" | cut -d'/' -f1)
+	if [[ ! "$seg1" =~ ^.*(\..*){1,} ]]; then
+		IMAGE_ID=docker.io/$IMAGE_ID
+	fi
+fi
 # 构建目标镜像ID
 DEST_IMAGE_ID=""
 if [ -z "$REGISTRY_NAMESPACE" ]; then
 	DEST_IMAGE_ID=$REGISTRY_HOST/$IMAGE_ID
 else
-	DEST_IMAGE_ID=$REGISTRY_HOST/$REGISTRY_NAMESPACE/$(echo "$IMAGE_ID" | tr '/' '-')
+	DEST_IMAGE_ID=$REGISTRY_HOST/$REGISTRY_NAMESPACE/$(echo "$IMAGE_ID" | tr '/' '_')
 fi
 
 # login
