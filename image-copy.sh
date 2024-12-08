@@ -6,7 +6,11 @@ segs=$(echo "$IMAGE_ID" | awk -F'/' '{print NF}')
 if [ ! "$segs" == "3" ]; then
 	seg1=$(echo "$IMAGE_ID" | cut -d'/' -f1)
 	if [[ ! "$seg1" =~ ^.*(\..*){1,} ]]; then
-		IMAGE_ID=docker.io/$IMAGE_ID
+		if [[ "$segs" == "1" ]]; then
+			IMAGE_ID=docker.io/library/$IMAGE_ID
+		else
+			IMAGE_ID=docker.io/$IMAGE_ID
+		fi
 	fi
 fi
 # 构建目标镜像ID
