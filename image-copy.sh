@@ -4,11 +4,11 @@ IMAGE_ID=$1
 # 源镜像ID
 segs=$(echo "$IMAGE_ID" | awk -F'/' '{print NF}')
 if [ ! "$segs" == "3" ]; then
-	seg1=$(echo "$IMAGE_ID" | cut -d'/' -f1)
-	if [[ ! "$seg1" =~ ^.*(\..*){1,} ]]; then
-		if [[ "$segs" == "1" ]]; then
-			IMAGE_ID=docker.io/library/$IMAGE_ID
-		else
+	if [[ "$segs" == "1" ]]; then
+		IMAGE_ID=docker.io/library/$IMAGE_ID
+	else
+		seg1=$(echo "$IMAGE_ID" | cut -d'/' -f1)
+		if [[ ! "$seg1" =~ ^.*(\..*){1,} ]]; then
 			IMAGE_ID=docker.io/$IMAGE_ID
 		fi
 	fi
