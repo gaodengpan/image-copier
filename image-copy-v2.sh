@@ -1,10 +1,12 @@
 #! /bin/bash
 
 IMAGE_ID=$1
+SOURCE_ID=$IMAGE_ID
 # 源镜像ID
 segs=$(echo "$IMAGE_ID" | awk -F'/' '{print NF}')
 if [ ! "$segs" == "3" ]; then
 	if [[ "$segs" == "1" ]]; then
+		SOURCE_ID=library/$IMAGE_ID
 		IMAGE_ID=docker.io/library/$IMAGE_ID
 	else
 		seg1=$(echo "$IMAGE_ID" | cut -d'/' -f1)
@@ -13,13 +15,15 @@ if [ ! "$segs" == "3" ]; then
 		fi
 	fi
 fi
+echo $SOURCE_ID
 # 构建目标镜像ID
 DEST_IMAGE_ID=""
 if [ -z "$REGISTRY_NAMESPACE" ]; then
 	DEST_IMAGE_ID=$REGISTRY_HOST/$IMAGE_ID
 else
-	DEST_IMAGE_ID=$REGISTRY_HOST/$REGISTRY_NAMESPACE/$(echo "$IMAGE_ID" | tr '/' '_')
+	DEST_IMAGE_ID=$REGISTRY_HOST/$REGISTRY_NAMESPACE/$(echo "$IMAGE_ID" | tr '/' '_' | cut -c 1-40)
 fi
+echo $DEST_IMAGE_ID
 
 # login
 docker login -u "$REGISTRY_USERNAME" -p "$REGISTRY_PASSWD" "$REGISTRY_HOST" >/dev/null 2>&1
@@ -55,7 +59,7 @@ if [ $? == 1 ]; then
 		script=$(printf '.workflow_runs | map(select(.name == "copy %s to %s%s")) | first | .id' "$IMAGE_ID" "$DEST_IMAGE_ID" "$suffix")
 		runId=$(echo "$runs" | jq -r "$script")
 		if [ "$runId" == "null" ]; then
-			sleep 1
+			sleep 1s
 		else
 			break
 		fi
@@ -81,7 +85,7 @@ if [ $? == 1 ]; then
 			break
 		else
 			echo -ne "\rworkflow run $status..."
-			sleep 3
+			sleep 3s
 		fi
 	done
 
@@ -91,3 +95,6 @@ fi
 # 本地打tag
 docker tag "$DEST_IMAGE_ID" "$IMAGE_ID"
 echo "image is sucessfully pulled and tagged as $IMAGE_ID, just use it!"
+# 推送到本地私有仓库 TODO 使用skopeo改造, 直接拷贝镜像到私有仓库
+docker tag "$IMAGE_ID" localhost:6000/"$SOURCE_ID"
+docker push localhost:6000/"$SOURCE_ID"
