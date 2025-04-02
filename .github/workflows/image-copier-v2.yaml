@@ -15,6 +15,11 @@ on:
         description: 'name suffix to distinguish run-name'
         type: string
         required: false
+      arch:
+        description: 'image arch'
+        type: string
+        required: false
+        default: 'arm64'
 
 defaults:
   run:
@@ -28,4 +33,4 @@ jobs:
       - name: install
         run: sudo apt-get update && sudo apt-get -y install skopeo
       - name: copy
-        run: skopeo copy docker://${{inputs.imageId}} docker://${{inputs.destImageId}} --dest-creds ${{secrets.DEST_CREDS}}
+        run: skopeo copy docker://${{inputs.imageId}} docker://${{inputs.destImageId}} --dest-creds ${{secrets.DEST_CREDS}} --arch ${{inputs.arch}}
