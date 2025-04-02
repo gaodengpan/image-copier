@@ -26,9 +26,8 @@ fi
 echo $DEST_IMAGE_ID
 
 # login
-docker login -u "$REGISTRY_USERNAME" -p "$REGISTRY_PASSWD" "$REGISTRY_HOST" >/dev/null 2>&1
+echo "$REGISTRY_PASSWD" | docker login -u "$REGISTRY_USERNAME" --password-stdin "$REGISTRY_HOST"
 if [ $? == 1 ]; then
-	echo "login $REGISTRY_HOST failed"
 	exit 1
 fi
 echo "login $REGISTRY_HOST success"
@@ -59,7 +58,7 @@ if [ $? == 1 ]; then
 		script=$(printf '.workflow_runs | map(select(.name == "copy %s to %s%s")) | first | .id' "$IMAGE_ID" "$DEST_IMAGE_ID" "$suffix")
 		runId=$(echo "$runs" | jq -r "$script")
 		if [ "$runId" == "null" ]; then
-			sleep 1s
+			sleep 1
 		else
 			break
 		fi

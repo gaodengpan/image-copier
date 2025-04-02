@@ -20,6 +20,12 @@ on:
         type: string
         required: false
         default: 'arm64'
+      os:
+        description: 'image os'
+        type: string
+        required: false
+        default: 'linux'
+        
 
 defaults:
   run:
@@ -33,4 +39,4 @@ jobs:
       - name: install
         run: sudo apt-get update && sudo apt-get -y install skopeo
       - name: copy
-        run: skopeo copy docker://${{inputs.imageId}} docker://${{inputs.destImageId}} --dest-creds ${{secrets.DEST_CREDS}} --arch ${{inputs.arch}}
+        run: skopeo copy --override-arch ${{inputs.arch}} --override-os ${{inputs.os}} docker://${{inputs.imageId}} docker://${{inputs.destImageId}} --dest-creds ${{secrets.DEST_CREDS}} 
