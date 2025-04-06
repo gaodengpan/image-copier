@@ -1,5 +1,5 @@
 #! /bin/bash
-
+# set -x
 IMAGE_ID=$1
 SOURCE_ID=$IMAGE_ID
 # 源镜像ID
@@ -30,15 +30,14 @@ echo "$REGISTRY_PASSWD" | docker login -u "$REGISTRY_USERNAME" --password-stdin 
 if [ $? == 1 ]; then
 	exit 1
 fi
-echo "login $REGISTRY_HOST success"
-# 尝试拉取目标镜像
-docker pull "$DEST_IMAGE_ID" >/dev/null 2>&1
-if [ $? == 1 ]; then
+# 检查镜像是否存在
+skopeo inspect --creds="$REGISTRY_USERNAME:$REGISTRY_PASSWD" docker://$DEST_IMAGE_ID >/dev/null 2>&1
+if [ $? != 0 ]; then
 	echo "image not found: $DEST_IMAGE_ID"
 	# 触发github workflow同步镜像
 	echo "dispatch github workflow: image-copier"
 	suffix="--$(date '+%s')"
-	data=$(printf '{"ref":"master","inputs":{"imageId":"%s","destImageId":"%s","suffix":"%s"}}' "$IMAGE_ID" "$DEST_IMAGE_ID" "$suffix")
+	data=$(printf '{"ref":"master","inputs":{"imageId":"%s","destImageId":"%s","suffix":"%s","arch":"%s","os":"%s"}}' "$IMAGE_ID" "$DEST_IMAGE_ID" "$suffix" "$REGISTRY_ARCH" "$REGISTRY_OS")
 	curl -sL \
 		-X POST \
 		-H "Accept: application/vnd.github+json" \
@@ -87,13 +86,15 @@ if [ $? == 1 ]; then
 			sleep 3
 		fi
 	done
-
-	# 拉取镜像
-	docker pull "$DEST_IMAGE_ID"
 fi
-# 本地打tag
-docker tag "$DEST_IMAGE_ID" "$IMAGE_ID"
-echo "image is sucessfully pulled and tagged as $IMAGE_ID, just use it!"
-# 推送到本地私有仓库 TODO 使用skopeo改造, 直接拷贝镜像到私有仓库
-docker tag "$IMAGE_ID" localhost:5000/"$SOURCE_ID"
-docker push localhost:5000/"$SOURCE_ID"
+
+# 拷贝并导入镜像
+skopeo copy --src-creds="$REGISTRY_USERNAME:$REGISTRY_PASSWD" docker://$DEST_IMAGE_ID docker-archive:tmp.tar && docker load -i tmp.tar && rm -rf tmp.tar
+# 刷新镜像元数据
+docker pull $IMAGE_ID
+
+# 推送到本地仓库
+# if [ ! -z "$LOCAL_REGISTRY" ];then
+	# docker tag "$IMAGE_ID" $LOCAL_REGISTRY/"$SOURCE_ID"
+	# docker push $LOCAL_REGISTRY/"$SOURCE_ID"
+# fi
