@@ -34,9 +34,7 @@ defaults:
 jobs:
   copy:
     name: copy
-    runs-on: ubuntu-latest
+    runs-on: ananace/skopeo:latest
     steps:
-      - name: install
-        run: sudo apt-get update && sudo apt-get -y install skopeo
       - name: copy
         run: skopeo copy --override-arch ${{inputs.arch}} --override-os ${{inputs.os}} docker://${{inputs.imageId}} docker://${{inputs.destImageId}} --dest-creds ${{secrets.DEST_CREDS}} 

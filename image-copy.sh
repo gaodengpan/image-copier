@@ -89,9 +89,8 @@ if [ $? != 0 ]; then
 fi
 
 # 拷贝并导入镜像
-skopeo copy --src-creds="$REGISTRY_USERNAME:$REGISTRY_PASSWD" docker://$DEST_IMAGE_ID docker-archive:tmp.tar && docker load -i tmp.tar && rm -rf tmp.tar
-# 刷新镜像元数据
-docker pull $IMAGE_ID
+skopeo copy --src-creds="$REGISTRY_USERNAME:$REGISTRY_PASSWD" docker://$DEST_IMAGE_ID docker-archive:tmp.tar:$IMAGE_ID 
+docker load -i tmp.tar && rm -rf tmp.tar
 
 # 推送到本地仓库
 # if [ ! -z "$LOCAL_REGISTRY" ];then
