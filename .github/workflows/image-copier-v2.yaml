@@ -34,7 +34,9 @@ defaults:
 jobs:
   copy:
     name: copy
-    runs-on: ananace/skopeo:latest
+    runs-on: ubuntu-latest
+    container:
+      image: ananace/skopeo:latest
     steps:
       - name: copy
         run: skopeo copy --override-arch ${{inputs.arch}} --override-os ${{inputs.os}} docker://${{inputs.imageId}} docker://${{inputs.destImageId}} --dest-creds ${{secrets.DEST_CREDS}} 
