@@ -22,6 +22,7 @@ if [ -z "$REGISTRY_NAMESPACE" ]; then
 	DEST_IMAGE_ID=$REGISTRY_HOST/$IMAGE_ID
 else
 	DEST_IMAGE_ID=$REGISTRY_HOST/$REGISTRY_NAMESPACE/$(echo "$IMAGE_ID" | tr '/' '_' | cut -c 1-40)
+	# DEST_IMAGE_ID=$REGISTRY_HOST/$REGISTRY_NAMESPACE/$(echo "$IMAGE_ID" | tr '/' '_')
 fi
 echo $DEST_IMAGE_ID
 
@@ -89,8 +90,9 @@ if [ $? != 0 ]; then
 fi
 
 # 拷贝并导入镜像
-skopeo copy --src-creds="$REGISTRY_USERNAME:$REGISTRY_PASSWD" docker://$DEST_IMAGE_ID docker-archive:tmp.tar:$IMAGE_ID 
-docker load -i tmp.tar && rm -rf tmp.tar
+tmp_file="tmp-$RANDOM.tar"
+skopeo copy --src-creds="$REGISTRY_USERNAME:$REGISTRY_PASSWD" docker://$DEST_IMAGE_ID docker-archive:$tmp_file:$IMAGE_ID 
+docker load -i $tmp_file && rm -rf $tmp_file
 
 # 推送到本地仓库
 # if [ ! -z "$LOCAL_REGISTRY" ];then

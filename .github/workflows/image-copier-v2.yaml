@@ -19,7 +19,7 @@ on:
         description: 'image arch'
         type: string
         required: false
-        default: 'arm64'
+        default: 'amd64'
       os:
         description: 'image os'
         type: string
