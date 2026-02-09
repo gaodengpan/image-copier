@@ -5,23 +5,28 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sync"
-
-	"github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
 
 	"github.com/example/image-copier/internal/config"
 	"github.com/example/image-copier/internal/core"
+	"github.com/example/image-copier/pkg/progress"
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 )
 
 func NewBatchCommand() *cobra.Command {
-	var filePath string
+	var (
+		filePath    string
+		workerCount int
+		showDetails bool
+	)
 
 	cmd := &cobra.Command{
 		Use:   "batch",
 		Short: "Pull multiple images through GitHub Actions",
 		Long:  `Pull multiple images either from command line arguments or from a file`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := context.Background()
+
 			cfg, err := config.Load()
 			if err != nil {
 				return fmt.Errorf("failed to load config: %w", err)
@@ -64,12 +69,14 @@ func NewBatchCommand() *cobra.Command {
 				return fmt.Errorf("no images provided")
 			}
 
-			// Process images concurrently
-			return processImagesConcurrently(logger, pullerCfg, images)
+			// Process images with progress bar
+			return processImagesWithProgress(logger, pullerCfg, images, workerCount, showDetails, ctx)
 		},
 	}
 
 	cmd.Flags().StringVarP(&filePath, "file", "f", "", "Path to file containing image list (one per line)")
+	cmd.Flags().IntVarP(&workerCount, "jobs", "j", 3, "Number of concurrent workers")
+	cmd.Flags().BoolVarP(&showDetails, "verbose", "v", false, "Show detailed progress for each image")
 
 	return cmd
 }
@@ -98,54 +105,22 @@ func readImagesFromFile(filePath string) ([]string, error) {
 	return images, nil
 }
 
-func processImagesConcurrently(logger *logrus.Logger, pullerCfg *core.Config, images []string) error {
-	type result struct {
-		image string
-		err   error
+// processImagesWithProgress processes images with a progress bar and worker pool
+func processImagesWithProgress(logger *logrus.Logger, pullerCfg *core.Config, images []string, workerCount int, showDetails bool, ctx context.Context) error {
+	// Validate worker count
+	if workerCount < 1 {
+		workerCount = 1
+	}
+	if workerCount > len(images) {
+		workerCount = len(images)
 	}
 
-	results := make(chan result, len(images))
-	var wg sync.WaitGroup
+	// Create batch progress manager
+	bp := progress.NewBatchProgress(images, showDetails)
 
-	// Start workers
-	for _, image := range images {
-		wg.Add(1)
-		go func(img string) {
-			defer wg.Done()
-
-			puller := core.NewPuller(pullerCfg, logger)
-			ctx := context.Background()
-
-			err := puller.PullSingle(ctx, img)
-			results <- result{image: img, err: err}
-		}(image)
-	}
-
-	// Close results channel when all workers are done
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	// Collect results
-	var errors []error
-	successCount := 0
-
-	for res := range results {
-		if res.err != nil {
-			logger.Errorf("Failed to process image %s: %v", res.image, res.err)
-			errors = append(errors, res.err)
-		} else {
-			logger.Infof("Successfully processed image %s", res.image)
-			successCount++
-		}
-	}
-
-	logger.Infof("Processed %d images successfully, %d failed", successCount, len(errors))
-
-	if len(errors) > 0 {
-		return fmt.Errorf("failed to process %d images", len(errors))
-	}
-
-	return nil
+	// Process images with worker pool
+	return bp.Process(workerCount, func(index int, image string) error {
+		puller := core.NewPuller(pullerCfg, logger)
+		return puller.PullSingle(ctx, image)
+	})
 }

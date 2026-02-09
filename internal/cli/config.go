@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -58,56 +59,48 @@ func newConfigShowCommand() *cobra.Command {
 }
 
 func newConfigInitCommand() *cobra.Command {
+	var (
+		skipExisting bool
+		force        bool
+	)
+
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Create a sample configuration file",
-		Long:  `Create a sample configuration file in the current directory`,
+		Short: "Create configuration file interactively",
+		Long:  `Create a configuration file through an interactive wizard`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			content := `# GitHub Configuration
-github:
-  # GitHub repository owner (user or organization)
-  owner: ""
-  # GitHub repository name
-  repo: ""
-  # GitHub personal access token with workflow permissions
-  token: ""
-  # Workflow filename (usually ends with .yaml)
-  workflow_id: "image-copier-v2.yaml"
-
-# Registry Configuration
-registry:
-  # Domestic registry host (e.g., registry.cn-hangzhou.aliyuncs.com)
-  host: ""
-  # Registry username
-  username: ""
-  # Registry password or access token
-  password: ""
-  # Optional namespace for organizing images
-  namespace: ""
-  # Architecture for multi-platform images (default: amd64)
-  arch: "amd64"
-  # Operating system for multi-platform images (default: linux)
-  os: "linux"
-
-# Logging Configuration
-log_level: "info"
-`
-
 			filename := "config.yaml"
-			if _, err := os.Stat(filename); err == nil {
-				return fmt.Errorf("config file %s already exists", filename)
+
+			// Check if file exists
+			if _, err := os.Stat(filename); err == nil && !force {
+				return fmt.Errorf("config file %s already exists. Use --force to overwrite", filename)
 			}
 
-			if err := os.WriteFile(filename, []byte(content), 0644); err != nil {
+			// Run wizard
+			ctx := context.Background()
+			data, err := RunWizard(ctx, skipExisting)
+			if err != nil {
+				return fmt.Errorf("wizard failed: %w", err)
+			}
+
+			// Write config file
+			if err := WriteConfigFile(data, filename); err != nil {
 				return fmt.Errorf("failed to write config file: %w", err)
 			}
 
-			fmt.Printf("Sample configuration file created: %s\n", filename)
-			fmt.Println("Please edit the file with your actual configuration values.")
+			fmt.Printf("\nConfiguration file created: %s\n", filename)
+			fmt.Println("You can now use image-copier!")
+			fmt.Println("\nIf you need to make changes later, you can:")
+			fmt.Println("  - Edit the config file directly")
+			fmt.Println("  - Run 'image-copier config init --force' to reconfigure")
+			fmt.Println("  - Use environment variables to override settings")
 
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&skipExisting, "skip-existing", true, "Skip already configured values")
+	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing config file")
 
 	return cmd
 }

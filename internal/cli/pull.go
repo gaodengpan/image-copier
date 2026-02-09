@@ -12,6 +12,12 @@ import (
 )
 
 func NewPullCommand() *cobra.Command {
+	var (
+		arch      string
+		osType    string
+		multiArch bool
+	)
+
 	cmd := &cobra.Command{
 		Use:   "pull IMAGE_ID",
 		Short: "Pull a single image through GitHub Actions",
@@ -32,6 +38,21 @@ func NewPullCommand() *cobra.Command {
 			logger := logrus.New()
 			logger.SetLevel(level)
 
+			// Use CLI flags if provided, otherwise use config
+			if arch == "" {
+				arch = cfg.Registry.Arch
+			}
+			if osType == "" {
+				osType = cfg.Registry.Os
+			}
+
+			if multiArch {
+				logger.Info("Multi-arch sync mode is enabled")
+				// TODO: Implement multi-arch sync logic
+				// For now, we'll log a warning and proceed with the requested arch
+				logger.Warnf("Multi-arch sync not yet fully implemented, using arch: %s, os: %s", arch, osType)
+			}
+
 			pullerCfg := &core.Config{
 				GithubOwner:       cfg.Github.Owner,
 				GithubRepo:        cfg.Github.Repo,
@@ -41,8 +62,8 @@ func NewPullCommand() *cobra.Command {
 				RegistryUsername:  cfg.Registry.Username,
 				RegistryPassword:  cfg.Registry.Password,
 				RegistryNamespace: cfg.Registry.Namespace,
-				RegistryArch:      cfg.Registry.Arch,
-				RegistryOs:        cfg.Registry.Os,
+				RegistryArch:      arch,
+				RegistryOs:        osType,
 			}
 
 			puller := core.NewPuller(pullerCfg, logger)
@@ -55,6 +76,11 @@ func NewPullCommand() *cobra.Command {
 			return nil
 		},
 	}
+
+	// Add flags
+	cmd.Flags().StringVar(&arch, "arch", "", "Image architecture (e.g., amd64, arm64)")
+	cmd.Flags().StringVar(&osType, "os", "", "Image operating system (e.g., linux)")
+	cmd.Flags().BoolVar(&multiArch, "multi-arch", false, "Sync all available architectures")
 
 	return cmd
 }

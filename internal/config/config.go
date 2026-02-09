@@ -26,6 +26,12 @@ type Config struct {
 		Os       string `mapstructure:"os"`
 	} `mapstructure:"registry"`
 
+	Retry struct {
+		MaxAttempts     string `mapstructure:"max_attempts"`
+		InitialInterval string `mapstructure:"initial_interval"`
+		MaxInterval     string `mapstructure:"max_interval"`
+	} `mapstructure:"retry"`
+
 	LogLevel string `mapstructure:"log_level"`
 }
 

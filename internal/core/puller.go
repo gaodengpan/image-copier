@@ -11,13 +11,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/example/image-copier/pkg/retry"
 	"github.com/sirupsen/logrus"
 )
 
 // Puller handles the image pulling process
 type Puller struct {
-	Config *Config
-	Logger *logrus.Logger
+	Config      *Config
+	RetryConfig *retry.Config
+	Logger      *logrus.Logger
 }
 
 // Config holds the configuration needed for Puller
@@ -37,8 +39,9 @@ type Config struct {
 // NewPuller creates a new Puller instance
 func NewPuller(config *Config, logger *logrus.Logger) *Puller {
 	return &Puller{
-		Config: config,
-		Logger: logger,
+		Config:      config,
+		RetryConfig: retry.DefaultConfig(),
+		Logger:      logger,
 	}
 }
 
@@ -62,15 +65,15 @@ func (p *Puller) PullSingle(ctx context.Context, imageID string) error {
 
 	if !exists {
 		p.Logger.Info("Image not found in destination registry, triggering GitHub workflow")
-		
+
 		// Trigger GitHub workflow
-		runID, err := p.triggerWorkflow(sourceID, destImageID)
+		runID, err := p.triggerWorkflow(ctx, sourceID, destImageID)
 		if err != nil {
 			return fmt.Errorf("failed to trigger workflow: %w", err)
 		}
 
 		// Wait for workflow completion
-		if err := p.waitForWorkflow(runID); err != nil {
+		if err := p.waitForWorkflow(ctx, runID); err != nil {
 			return fmt.Errorf("workflow failed: %w", err)
 		}
 	} else {
@@ -145,9 +148,9 @@ func (p *Puller) checkImageExists(destImageID string) (bool, error) {
 	return true, nil
 }
 
-func (p *Puller) triggerWorkflow(sourceID, destImageID string) (string, error) {
+func (p *Puller) triggerWorkflow(ctx context.Context, sourceID, destImageID string) (string, error) {
 	suffix := fmt.Sprintf("--%d", time.Now().Unix())
-	
+
 	data := map[string]interface{}{
 		"ref": "master",
 		"inputs": map[string]string{
@@ -158,139 +161,180 @@ func (p *Puller) triggerWorkflow(sourceID, destImageID string) (string, error) {
 			"os":           p.Config.RegistryOs,
 		},
 	}
-	
-	jsonData, err := json.Marshal(data)
+
+	var err error
+	err = retry.Retry(ctx, p.RetryConfig, func() error {
+		jsonData, err := json.Marshal(data)
+		if err != nil {
+			return fmt.Errorf("failed to marshal data: %w", err)
+		}
+
+		url := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/workflows/%s/dispatches",
+			p.Config.GithubOwner, p.Config.GithubRepo, p.Config.GithubWorkflowID)
+
+		req, err := http.NewRequest("POST", url, strings.NewReader(string(jsonData)))
+		if err != nil {
+			return fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("Authorization", "Bearer "+p.Config.GithubToken)
+		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+		req.Header.Set("Content-Type", "application/json")
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			return retry.NewRetryableError(fmt.Errorf("failed to send request: %w", err))
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusNoContent {
+			return nil
+		}
+
+		// Retry on certain HTTP errors
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+			return retry.NewRetryableError(fmt.Errorf("unexpected status code: %d", resp.StatusCode))
+		}
+
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	})
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal data: %w", err)
+		return "", fmt.Errorf("failed to trigger workflow: %w", err)
 	}
-	
-	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/workflows/%s/dispatches", 
-		p.Config.GithubOwner, p.Config.GithubRepo, p.Config.GithubWorkflowID)
-	
-	req, err := http.NewRequest("POST", url, strings.NewReader(string(jsonData)))
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
-	}
-	
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("Authorization", "Bearer "+p.Config.GithubToken)
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	req.Header.Set("Content-Type", "application/json")
-	
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-	
-	if resp.StatusCode != http.StatusNoContent {
-		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-	
+
 	// Find the workflow run ID
-	runID, err := p.findWorkflowRunID(sourceID, destImageID, suffix)
+	runID, err := p.findWorkflowRunID(ctx, sourceID, destImageID, suffix)
 	if err != nil {
 		return "", fmt.Errorf("failed to find workflow run ID: %w", err)
 	}
-	
+
 	p.Logger.Infof("Triggered workflow run ID: %s", runID)
 	return runID, nil
 }
 
-func (p *Puller) findWorkflowRunID(sourceID, destImageID, suffix string) (string, error) {
+func (p *Puller) findWorkflowRunID(ctx context.Context, sourceID, destImageID, suffix string) (string, error) {
 	expectedName := fmt.Sprintf("copy %s to %s%s", sourceID, destImageID, suffix)
-	
-	for i := 0; i < 30; i++ { // Retry for up to 30 seconds
-		url := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/workflows/%s/runs", 
-			p.Config.GithubOwner, p.Config.GithubRepo, p.Config.GithubWorkflowID)
-		
-		req, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			return "", fmt.Errorf("failed to create request: %w", err)
-		}
-		
-		req.Header.Set("Accept", "application/vnd.github+json")
-		req.Header.Set("Authorization", "Bearer "+p.Config.GithubToken)
-		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-		
-		client := &http.Client{}
-		resp, err := client.Do(req)
-		if err != nil {
-			return "", fmt.Errorf("failed to send request: %w", err)
-		}
-		
-		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
-			return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-		}
-		
-		var result struct {
-			WorkflowRuns []struct {
-				ID   int    `json:"id"`
-				Name string `json:"name"`
-			} `json:"workflow_runs"`
-		}
-		
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			resp.Body.Close()
-			return "", fmt.Errorf("failed to decode response: %w", err)
-		}
-		resp.Body.Close()
-		
-		for _, run := range result.WorkflowRuns {
-			if run.Name == expectedName {
-				return fmt.Sprintf("%d", run.ID), nil
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/workflows/%s/runs",
+		p.Config.GithubOwner, p.Config.GithubRepo, p.Config.GithubWorkflowID)
+
+	// Poll for up to 30 seconds
+	timeoutCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	ticker := time.NewTimer(0)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-timeoutCtx.Done():
+			return "", fmt.Errorf("workflow run not found after 30 seconds")
+		case <-ticker.C:
+			req, err := http.NewRequest("GET", url, nil)
+			if err != nil {
+				return "", fmt.Errorf("failed to create request: %w", err)
 			}
+
+			req.Header.Set("Accept", "application/vnd.github+json")
+			req.Header.Set("Authorization", "Bearer "+p.Config.GithubToken)
+			req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			if err != nil {
+				// Network error, retry
+				p.Logger.Debugf("Network error, retrying: %v", err)
+				ticker.Reset(time.Second)
+				continue
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode == http.StatusOK {
+				var result struct {
+					WorkflowRuns []struct {
+						ID   int    `json:"id"`
+						Name string `json:"name"`
+					} `json:"workflow_runs"`
+				}
+
+				if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+					p.Logger.Debugf("Failed to decode response, retrying: %v", err)
+					ticker.Reset(time.Second)
+					continue
+				}
+
+				for _, run := range result.WorkflowRuns {
+					if run.Name == expectedName {
+						return fmt.Sprintf("%d", run.ID), nil
+					}
+				}
+			} else if resp.StatusCode >= 500 {
+				// Server error, retry
+				p.Logger.Debugf("Server error %d, retrying", resp.StatusCode)
+				ticker.Reset(time.Second)
+				continue
+			} else {
+				return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+			}
+
+			// Not found yet, wait and retry
+			ticker.Reset(time.Second)
 		}
-		
-		time.Sleep(time.Second)
 	}
-	
-	return "", fmt.Errorf("workflow run not found after 30 attempts")
 }
 
-func (p *Puller) waitForWorkflow(runID string) error {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/runs/%s", 
+func (p *Puller) waitForWorkflow(ctx context.Context, runID string) error {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/runs/%s",
 		p.Config.GithubOwner, p.Config.GithubRepo, runID)
-	
-	link := fmt.Sprintf("https://github.com/%s/%s/actions/runs/%s", 
+
+	link := fmt.Sprintf("https://github.com/%s/%s/actions/runs/%s",
 		p.Config.GithubOwner, p.Config.GithubRepo, runID)
-	
+
 	p.Logger.Infof("Workflow run link: %s", link)
-	
+
 	for {
-		req, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			return fmt.Errorf("failed to create request: %w", err)
-		}
-		
-		req.Header.Set("Accept", "application/vnd.github+json")
-		req.Header.Set("Authorization", "Bearer "+p.Config.GithubToken)
-		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-		
-		client := &http.Client{}
-		resp, err := client.Do(req)
-		if err != nil {
-			return fmt.Errorf("failed to send request: %w", err)
-		}
-		
-		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
-			return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-		}
-		
 		var run struct {
 			Status     string `json:"status"`
 			Conclusion string `json:"conclusion"`
 		}
-		
-		if err := json.NewDecoder(resp.Body).Decode(&run); err != nil {
-			resp.Body.Close()
-			return fmt.Errorf("failed to decode response: %w", err)
+
+		err := retry.Retry(ctx, p.RetryConfig, func() error {
+			req, err := http.NewRequest("GET", url, nil)
+			if err != nil {
+				return fmt.Errorf("failed to create request: %w", err)
+			}
+
+			req.Header.Set("Accept", "application/vnd.github+json")
+			req.Header.Set("Authorization", "Bearer "+p.Config.GithubToken)
+			req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			if err != nil {
+				return retry.NewRetryableError(fmt.Errorf("failed to send request: %w", err))
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				// Retry on certain HTTP errors
+				if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+					return retry.NewRetryableError(fmt.Errorf("unexpected status code: %d", resp.StatusCode))
+				}
+				return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+			}
+
+			if err := json.NewDecoder(resp.Body).Decode(&run); err != nil {
+				return fmt.Errorf("failed to decode response: %w", err)
+			}
+
+			return nil
+		})
+
+		if err != nil {
+			return fmt.Errorf("failed to check workflow status: %w", err)
 		}
-		resp.Body.Close()
-		
+
 		switch run.Status {
 		case "completed":
 			if run.Conclusion == "success" {
@@ -300,10 +344,18 @@ func (p *Puller) waitForWorkflow(runID string) error {
 			return fmt.Errorf("workflow failed with conclusion: %s", run.Conclusion)
 		case "queued", "in_progress":
 			p.Logger.Infof("Workflow is %s...", run.Status)
-			time.Sleep(3 * time.Second)
+			select {
+			case <-time.After(3 * time.Second):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		default:
 			p.Logger.Warnf("Unknown workflow status: %s", run.Status)
-			time.Sleep(3 * time.Second)
+			select {
+			case <-time.After(3 * time.Second):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		}
 	}
 }
