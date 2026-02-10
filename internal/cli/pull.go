@@ -143,7 +143,7 @@ Supports two modes:
 	// Flags
 	cmd.Flags().StringVar(&arch, "arch", "", "Image architecture (e.g., amd64, arm64)")
 	cmd.Flags().StringVar(&osType, "os", "", "Image operating system (e.g., linux)")
-	cmd.Flags().StringVarP(&filePath, "file", "f", "", "YAML manifest 文件路径")
+	cmd.Flags().StringVarP(&filePath, "file", "f", "", "Path to YAML manifest file")
 	cmd.Flags().IntVarP(&workerCount, "jobs", "j", 3, "Number of concurrent workers")
 	cmd.Flags().BoolVar(&force, "force", false, "Force re-pull even if image exists locally")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show what would be done without making changes")

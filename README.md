@@ -209,10 +209,6 @@ image-copier pull --dry-run nginx:latest redis:alpine
 image-copier config show
 ```
 
-sync 分两阶段运行：
-1. **Diff 阶段**：并发检查所有镜像在目标 Registry 的存在性，输出差异报告
-2. **Sync 阶段**：仅拉取缺失的镜像，带进度条显示
-
 ## 配置参考
 
 配置文件位于 `~/.config/image-copier/config.yaml`，也可通过环境变量覆盖。
@@ -278,14 +274,14 @@ image-copier pull -v nginx:latest
 image-copier pull [IMAGE...] [flags]
 
 Flags:
-      --arch string    镜像架构 (如 amd64, arm64)
-  -f, --file string    YAML manifest 文件路径
-      --force          强制重新拉取
-  -j, --jobs int       并发数 (默认 3)
-      --os string      操作系统 (如 linux)
-  -v, --verbose        显示详细日志
-      --dry-run        预览模式，不实际执行
+      --arch string    Image architecture (e.g., amd64, arm64)
+  -f, --file string    Path to YAML manifest file
+      --force          Force re-pull even if image exists locally
+  -j, --jobs int       Number of concurrent workers (default 3)
+      --os string      Operating system (e.g., linux)
+  -v, --verbose        Show detailed logs
+      --dry-run        Dry run mode, no actual execution
 
-image-copier config show     显示当前配置
-image-copier config init     交互式创建配置
+image-copier config show     Show current configuration
+image-copier config init     Interactive configuration creation
 ```
