@@ -2,8 +2,10 @@ package progress
 
 import (
 	"fmt"
-	"strings"
 	"sync"
+
+	"github.com/vbauerster/mpb/v8"
+	"github.com/vbauerster/mpb/v8/decor"
 )
 
 // ImageStatus represents the status of an image being processed
@@ -33,28 +35,47 @@ func (s ImageStatus) String() string {
 
 // ImageProgress tracks the progress of a single image
 type ImageProgress struct {
-	Image  string
-	Status ImageStatus
-	Error  error
+	Image   string
+	Status  ImageStatus
+	Error   error
+	spinner *mpb.Bar
 }
 
 // Progress manages the progress display for multiple images
 type Progress struct {
-	images      []*ImageProgress
-	current     int
-	total       int
-	mu          sync.Mutex
-	width       int
-	showDetails bool
+	container *mpb.Progress
+	mainBar   *mpb.Bar
+	images    []*ImageProgress
+	total     int
+	mu        sync.Mutex
 }
 
-// NewProgress creates a new progress tracker
-func NewProgress(total int, showDetails bool) *Progress {
+// NewProgress creates a new progress tracker with an mpb container
+func NewProgress(total int) *Progress {
+	container := mpb.New(
+		mpb.WithWidth(64),
+	)
+
+	mainBar := container.AddBar(int64(total),
+		mpb.PrependDecorators(
+			decor.Any(func(s decor.Statistics) string {
+				return fmt.Sprintf("[%d/%d]", s.Current, total)
+			}, decor.WCSyncSpace),
+		),
+		mpb.AppendDecorators(
+			decor.Percentage(decor.WCSyncSpace),
+			decor.OnComplete(
+				decor.Name("pulling", decor.WCSyncSpace),
+				"done",
+			),
+		),
+	)
+
 	return &Progress{
-		images:      make([]*ImageProgress, total),
-		total:       total,
-		width:       50, // progress bar width
-		showDetails: showDetails,
+		container: container,
+		mainBar:   mainBar,
+		images:    make([]*ImageProgress, total),
+		total:     total,
 	}
 }
 
@@ -70,195 +91,76 @@ func (p *Progress) AddImage(index int, image string) {
 }
 
 // UpdateStatus updates the status of an image
+// When status changes to Running, a spinner bar is created.
+// When status changes to Completed or Failed, the spinner bar is removed.
 func (p *Progress) UpdateStatus(index int, status ImageStatus, err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if index < len(p.images) && p.images[index] != nil {
-		p.images[index].Status = status
-		p.images[index].Error = err
+	if index >= len(p.images) || p.images[index] == nil {
+		return
+	}
+
+	img := p.images[index]
+	img.Status = status
+	img.Error = err
+
+	switch status {
+	case StatusRunning:
+		if img.spinner == nil {
+			img.spinner = p.container.AddSpinner(0,
+				mpb.PrependDecorators(
+					decor.Name("  ◐ "+img.Image, decor.WCSyncSpace),
+				),
+				mpb.BarFillerOnComplete(""),
+			)
+		}
+	case StatusCompleted, StatusFailed:
+		if img.spinner != nil {
+			img.spinner.Abort(true) // drop=true removes the bar from display
+			img.spinner = nil
+		}
 	}
 }
 
-// IncrementProgress increments the completed count and displays progress
-func (p *Progress) IncrementProgress() {
-	p.mu.Lock()
-	p.current++
-	p.mu.Unlock()
-	p.Display()
+// Increment increments the main progress bar by 1
+func (p *Progress) Increment() {
+	p.mainBar.Increment()
 }
 
-// Display shows the progress bar and image statuses
-func (p *Progress) Display() {
+// Wait waits for the mpb render loop to finish, then prints the summary
+func (p *Progress) Wait() {
+	p.container.Wait()
+	p.printSummary()
+}
+
+// printSummary prints the final summary after all processing
+func (p *Progress) printSummary() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	completed := p.current
-	percentage := float64(completed) / float64(p.total) * 100
-	barWidth := float64(p.width) * percentage / 100
-	bar := strings.Repeat("=", int(barWidth)) + strings.Repeat(" ", p.width-int(barWidth))
-
-	// Clear current line and write progress bar
-	fmt.Printf("\r[%d/%d] [%s] %.1f%%", completed, p.total, bar, percentage)
-
-	if p.showDetails || completed == p.total {
-		// Show detailed image statuses
-		fmt.Println() // Move to next line
-		p.displayImageStatuses()
-	}
-}
-
-// displayImageStatuses shows the status of all images
-func (p *Progress) displayImageStatuses() {
-	if !p.showDetails {
-		return
-	}
+	var succeeded, failed int
+	var failures []string
 
 	for _, img := range p.images {
 		if img == nil {
 			continue
 		}
-		icon := p.getStatusIcon(img.Status)
-		fmt.Printf("  %s %s %s", icon, img.Image, img.Status.String())
-		if img.Error != nil {
-			fmt.Printf(": %v", img.Error)
-		}
-		fmt.Println()
-	}
-}
-
-// getStatusIcon returns an icon for the status
-func (p *Progress) getStatusIcon(status ImageStatus) string {
-	switch status {
-	case StatusPending:
-		return "○"
-	case StatusRunning:
-		return "◐"
-	case StatusCompleted:
-		return "●"
-	case StatusFailed:
-		return "✗"
-	default:
-		return "?"
-	}
-}
-
-// StartWatching starts watching the progress and displaying updates
-func (p *Progress) StartWatching(done <-chan struct{}) {
-	ticker := make(chan struct{})
-	close(ticker)
-
-	for {
-		select {
-		case <-ticker:
-			p.Display()
-		case <-done:
-			p.Display()
-			return
-		}
-	}
-}
-
-// BatchProgress manages batch processing with worker pool
-type BatchProgress struct {
-	progress *Progress
-}
-
-// NewBatchProgress creates a new batch progress manager
-func NewBatchProgress(images []string, showDetails bool) *BatchProgress {
-	total := len(images)
-	p := NewProgress(total, showDetails)
-
-	for i, img := range images {
-		p.AddImage(i, img)
-	}
-
-	return &BatchProgress{progress: p}
-}
-
-// Process processes the images with a worker pool
-func (bp *BatchProgress) Process(workerCount int, processFunc func(int, string) error) error {
-	var wg sync.WaitGroup
-	errChan := make(chan error, len(bp.progress.images))
-	done := make(chan struct{})
-	defer close(done)
-
-	// Start progress display
-	go bp.progress.StartWatching(done)
-
-	// Create worker pool
-	jobs := make(chan int, len(bp.progress.images))
-	for i := 0; i < len(bp.progress.images); i++ {
-		jobs <- i
-	}
-	close(jobs)
-
-	// Start workers
-	for i := 0; i < workerCount; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for idx := range jobs {
-				img := bp.progress.images[idx]
-				if img == nil {
-					continue
-				}
-
-				bp.progress.UpdateStatus(idx, StatusRunning, nil)
-
-				err := processFunc(idx, img.Image)
-				if err != nil {
-					bp.progress.UpdateStatus(idx, StatusFailed, err)
-					errChan <- err
-				} else {
-					bp.progress.UpdateStatus(idx, StatusCompleted, nil)
-				}
-
-				bp.progress.IncrementProgress()
+		switch img.Status {
+		case StatusCompleted:
+			succeeded++
+		case StatusFailed:
+			failed++
+			msg := fmt.Sprintf("  ✗ %s", img.Image)
+			if img.Error != nil {
+				msg += fmt.Sprintf(": %v", img.Error)
 			}
-		}()
+			failures = append(failures, msg)
+		}
 	}
 
-	wg.Wait()
-
-	// Collect errors
-	var errors []error
-	close(errChan)
-	for err := range errChan {
-		errors = append(errors, err)
+	fmt.Printf("\nSummary: %d succeeded, %d failed\n", succeeded, failed)
+	for _, f := range failures {
+		fmt.Println(f)
 	}
-
-	// Display summary
-	bp.displaySummary(len(errors))
-
-	if len(errors) > 0 {
-		return fmt.Errorf("%d images failed", len(errors))
-	}
-
-	return nil
-}
-
-// displaySummary shows the final summary
-func (bp *BatchProgress) displaySummary(failedCount int) {
-	successCount := bp.progress.total - failedCount
-	fmt.Printf("\n\nCompleted: %d/%d images processed successfully", successCount, bp.progress.total)
-	if failedCount > 0 {
-		fmt.Printf(" (%d failed)", failedCount)
-	}
-	fmt.Println()
-}
-
-// GetTerminalWidth returns the terminal width
-func GetTerminalWidth() int {
-	// Try to get terminal width using TIOCGWINSZ
-	// This is a simplified version - a real implementation would use syscall
-	// For now, return a reasonable default
-	return 80
-}
-
-// SetWidth sets the progress bar width
-func (p *Progress) SetWidth(width int) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.width = width
 }
