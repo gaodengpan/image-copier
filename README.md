@@ -26,7 +26,11 @@
   ✓ 镜像就绪
 ```
 
-## 环境要求
+## 前置准备
+
+使用 Image Copier 前，需要完成以下三项准备工作。
+
+### 1. 本地环境依赖
 
 | 依赖 | 版本 | 用途 |
 |------|------|------|
@@ -34,17 +38,37 @@
 | [Skopeo](https://github.com/containers/skopeo) | - | Registry 间镜像复制 |
 | [Go](https://go.dev/dl/) | 1.24+ | 仅从源码构建时需要 |
 
-**macOS 安装依赖：**
+**macOS：**
 
 ```bash
 brew install docker skopeo
 ```
 
-**Ubuntu/Debian 安装依赖：**
+**Ubuntu/Debian：**
 
 ```bash
 sudo apt-get update && sudo apt-get install docker.io skopeo
 ```
+
+### 2. GitHub 仓库与 Actions 配置
+
+Image Copier 依赖你自己的 GitHub 仓库来运行 Actions Workflow，需要完成以下步骤：
+
+1. **Fork 本仓库**（或确保你的仓库中包含 `.github/workflows/image-copier-v2.yaml`）
+2. **配置仓库 Secret**：进入仓库 Settings → Secrets and variables → Actions，添加：
+   - `DEST_CREDS`：国内 Registry 凭证，格式为 `username:password`
+3. **生成 GitHub Personal Access Token**：
+   - 访问 https://github.com/settings/tokens
+   - 勾选 `repo` 和 `workflow` 权限
+   - 保存生成的 token（后续配置 CLI 时需要填入）
+
+### 3. 国内 Registry 账号
+
+你需要一个国内容器镜像仓库（如阿里云 ACR、腾讯云 TCR 等），准备好以下信息：
+
+- Registry 地址（如 `registry.cn-hangzhou.aliyuncs.com`）
+- 用户名和密码
+- 命名空间（可选）
 
 ## 安装
 
@@ -91,7 +115,7 @@ image-copier --version
 image-copier config init
 ```
 
-交互式向导会引导你填写 GitHub 和 Registry 信息，配置文件保存在 `~/.config/image-copier/config.yaml`。
+交互式向导会引导你填写 GitHub 和 Registry 信息（即前置准备中获取的 Token、凭证等），配置文件保存在 `~/.config/image-copier/config.yaml`。
 
 ### 2. 拉取镜像
 
@@ -196,16 +220,6 @@ log_level: "info"                            # 日志级别：debug/info/warn/er
 | `registry.username` | `REGISTRY_USERNAME` |
 | `registry.password` | `REGISTRY_PASSWD` |
 | `registry.namespace` | `REGISTRY_NAMESPACE` |
-
-## GitHub Actions 设置
-
-1. Fork 本仓库（或确保你的仓库中包含 `.github/workflows/image-copier-v2.yaml`）
-2. 在仓库 Settings → Secrets 中添加：
-   - `DEST_CREDS`：国内 Registry 凭证，格式为 `username:password`
-3. 生成 GitHub Personal Access Token：
-   - 访问 https://github.com/settings/tokens
-   - 勾选 `repo` 和 `workflow` 权限
-   - 将 token 填入配置文件的 `github.token`
 
 ## 故障排查
 
