@@ -43,7 +43,6 @@ func NewPullCommand() *cobra.Command {
 	var (
 		arch        string
 		osType      string
-		multiArch   bool
 		filePath    string
 		workerCount int
 		force       bool
@@ -85,11 +84,6 @@ func NewPullCommand() *cobra.Command {
 				osType = cfg.Registry.Os
 			}
 
-			if multiArch {
-				logger.Info("Multi-arch sync mode is enabled")
-				logger.Warnf("Multi-arch sync not yet fully implemented, using arch: %s, os: %s", arch, osType)
-			}
-
 			pullerCfg := &core.Config{
 				GithubOwner:       cfg.Github.Owner,
 				GithubRepo:        cfg.Github.Repo,
@@ -125,7 +119,6 @@ func NewPullCommand() *cobra.Command {
 	// Flags
 	cmd.Flags().StringVar(&arch, "arch", "", "Image architecture (e.g., amd64, arm64)")
 	cmd.Flags().StringVar(&osType, "os", "", "Image operating system (e.g., linux)")
-	cmd.Flags().BoolVar(&multiArch, "multi-arch", false, "Sync all available architectures")
 	cmd.Flags().StringVarP(&filePath, "file", "f", "", "Path to file containing image list (one per line)")
 	cmd.Flags().IntVarP(&workerCount, "jobs", "j", 3, "Number of concurrent workers")
 	cmd.Flags().BoolVar(&force, "force", false, "Force re-pull even if image exists locally")

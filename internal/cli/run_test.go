@@ -102,16 +102,6 @@ func TestNewPullCommand_RunE_WithConfig(t *testing.T) {
 	_ = cmd.Execute() // will fail at skopeo, but exercises config loading and flag logic
 }
 
-// TestNewPullCommand_RunE_WithMultiArch tests pull command with multi-arch flag
-func TestNewPullCommand_RunE_WithMultiArch(t *testing.T) {
-	setTestEnv(t)
-	cmd := NewPullCommand()
-	cmd.SilenceUsage = true
-	cmd.SilenceErrors = true
-	cmd.SetArgs([]string{"--multi-arch", "nginx:latest"})
-	_ = cmd.Execute()
-}
-
 // TestNewPullCommand_RunE_WithFile tests pull command reading from file
 func TestNewPullCommand_RunE_WithFile(t *testing.T) {
 	setTestEnv(t)

@@ -35,7 +35,7 @@ func TestNewPullCommand(t *testing.T) {
 	}
 
 	// Verify flags (original + merged from batch)
-	flags := []string{"arch", "os", "multi-arch", "file", "jobs", "force", "verbose"}
+	flags := []string{"arch", "os", "file", "jobs", "force", "verbose"}
 	for _, flag := range flags {
 		if cmd.Flags().Lookup(flag) == nil {
 			t.Errorf("expected flag '%s' to exist", flag)
@@ -60,14 +60,6 @@ func TestNewPullCommand_FlagDefaults(t *testing.T) {
 	}
 	if osFlag.DefValue != "" {
 		t.Errorf("expected empty default for os, got '%s'", osFlag.DefValue)
-	}
-
-	multiArchFlag := cmd.Flags().Lookup("multi-arch")
-	if multiArchFlag == nil {
-		t.Fatal("multi-arch flag not found")
-	}
-	if multiArchFlag.DefValue != "false" {
-		t.Errorf("expected 'false' default for multi-arch, got '%s'", multiArchFlag.DefValue)
 	}
 
 	fileFlag := cmd.Flags().Lookup("file")
@@ -264,7 +256,7 @@ func TestCommandHierarchy(t *testing.T) {
 func TestPullCommand_FlagParsing(t *testing.T) {
 	cmd := cli.NewPullCommand()
 
-	args := []string{"--arch", "arm64", "--os", "linux", "--multi-arch", "-f", "images.txt", "-j", "5", "--force", "-v"}
+	args := []string{"--arch", "arm64", "--os", "linux", "-f", "images.txt", "-j", "5", "--force", "-v"}
 	err := cmd.Flags().Parse(args)
 	if err != nil {
 		t.Errorf("failed to parse flags: %v", err)

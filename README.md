@@ -250,7 +250,6 @@ Flags:
   -f, --file string    镜像列表文件路径
       --force          强制重新拉取
   -j, --jobs int       并发数 (默认 3)
-      --multi-arch     同步所有架构（实验性）
       --os string      操作系统 (如 linux)
   -v, --verbose        显示详细日志
 
