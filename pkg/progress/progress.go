@@ -71,12 +71,20 @@ func NewProgress(total int) *Progress {
 		),
 	)
 
-	return &Progress{
+	p := &Progress{
 		container: container,
 		mainBar:   mainBar,
 		images:    make([]*ImageProgress, total),
 		total:     total,
 	}
+
+	// When total is 0, the bar will never reach completion naturally,
+	// so abort it immediately to allow container.Wait() to return.
+	if total == 0 {
+		mainBar.Abort(true)
+	}
+
+	return p
 }
 
 // AddImage adds an image to track
