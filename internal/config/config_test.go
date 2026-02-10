@@ -5,8 +5,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gaodengpan/image-copier/internal/config"
+	"github.com/gaodengpan/image-copier/pkg/retry"
 )
 
 // TestValidateConfig_Success tests successful config validation
@@ -520,6 +522,82 @@ log_level: "debug"
 
 	if cfg.Retry.MaxAttempts != "5" {
 		t.Errorf("Expected MaxAttempts from file to be '5', got '%s'", cfg.Retry.MaxAttempts)
+	}
+}
+
+// --- ParseRetryConfig tests ---
+
+func TestParseRetryConfig_AllFields(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Retry.MaxAttempts = "5"
+	cfg.Retry.InitialInterval = "2s"
+	cfg.Retry.MaxInterval = "60s"
+
+	rc := cfg.ParseRetryConfig()
+
+	if rc.MaxAttempts != 5 {
+		t.Errorf("MaxAttempts = %d, want 5", rc.MaxAttempts)
+	}
+	if rc.InitialInterval != 2*time.Second {
+		t.Errorf("InitialInterval = %v, want 2s", rc.InitialInterval)
+	}
+	if rc.MaxInterval != 60*time.Second {
+		t.Errorf("MaxInterval = %v, want 60s", rc.MaxInterval)
+	}
+}
+
+func TestParseRetryConfig_EmptyFields(t *testing.T) {
+	cfg := &config.Config{}
+
+	rc := cfg.ParseRetryConfig()
+	defaults := retry.DefaultConfig()
+
+	if rc.MaxAttempts != defaults.MaxAttempts {
+		t.Errorf("MaxAttempts = %d, want default %d", rc.MaxAttempts, defaults.MaxAttempts)
+	}
+	if rc.InitialInterval != defaults.InitialInterval {
+		t.Errorf("InitialInterval = %v, want default %v", rc.InitialInterval, defaults.InitialInterval)
+	}
+	if rc.MaxInterval != defaults.MaxInterval {
+		t.Errorf("MaxInterval = %v, want default %v", rc.MaxInterval, defaults.MaxInterval)
+	}
+}
+
+func TestParseRetryConfig_PartialFields(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Retry.MaxAttempts = "10"
+
+	rc := cfg.ParseRetryConfig()
+	defaults := retry.DefaultConfig()
+
+	if rc.MaxAttempts != 10 {
+		t.Errorf("MaxAttempts = %d, want 10", rc.MaxAttempts)
+	}
+	if rc.InitialInterval != defaults.InitialInterval {
+		t.Errorf("InitialInterval = %v, want default %v", rc.InitialInterval, defaults.InitialInterval)
+	}
+	if rc.MaxInterval != defaults.MaxInterval {
+		t.Errorf("MaxInterval = %v, want default %v", rc.MaxInterval, defaults.MaxInterval)
+	}
+}
+
+func TestParseRetryConfig_InvalidFields(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Retry.MaxAttempts = "notanumber"
+	cfg.Retry.InitialInterval = "invalid"
+	cfg.Retry.MaxInterval = "invalid"
+
+	rc := cfg.ParseRetryConfig()
+	defaults := retry.DefaultConfig()
+
+	if rc.MaxAttempts != defaults.MaxAttempts {
+		t.Errorf("MaxAttempts = %d, want default %d", rc.MaxAttempts, defaults.MaxAttempts)
+	}
+	if rc.InitialInterval != defaults.InitialInterval {
+		t.Errorf("InitialInterval = %v, want default %v", rc.InitialInterval, defaults.InitialInterval)
+	}
+	if rc.MaxInterval != defaults.MaxInterval {
+		t.Errorf("MaxInterval = %v, want default %v", rc.MaxInterval, defaults.MaxInterval)
 	}
 }
 

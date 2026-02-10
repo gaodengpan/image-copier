@@ -2,7 +2,6 @@ package cli_test
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/gaodengpan/image-copier/internal/cli"
@@ -35,7 +34,7 @@ func TestNewPullCommand(t *testing.T) {
 	}
 
 	// Verify flags (original + merged from batch)
-	flags := []string{"arch", "os", "file", "jobs", "force", "verbose"}
+	flags := []string{"arch", "os", "file", "jobs", "force", "dry-run", "verbose"}
 	for _, flag := range flags {
 		if cmd.Flags().Lookup(flag) == nil {
 			t.Errorf("expected flag '%s' to exist", flag)
@@ -84,6 +83,14 @@ func TestNewPullCommand_FlagDefaults(t *testing.T) {
 	}
 	if forceFlag.DefValue != "false" {
 		t.Errorf("expected 'false' default for force, got '%s'", forceFlag.DefValue)
+	}
+
+	dryRunFlag := cmd.Flags().Lookup("dry-run")
+	if dryRunFlag == nil {
+		t.Fatal("dry-run flag not found")
+	}
+	if dryRunFlag.DefValue != "false" {
+		t.Errorf("expected 'false' default for dry-run, got '%s'", dryRunFlag.DefValue)
 	}
 
 	verboseFlag := cmd.Flags().Lookup("verbose")
@@ -193,49 +200,6 @@ func TestNewConfigCommand_InitSubcommand(t *testing.T) {
 	t.Error("init subcommand not found")
 }
 
-// --- readImagesFromFile tests (via pull command) ---
-
-func TestReadImagesFromFile(t *testing.T) {
-	tmpDir := t.TempDir()
-	filePath := filepath.Join(tmpDir, "images.txt")
-
-	content := `nginx:latest
-# this is a comment
-redis:alpine
-
-postgres:15
-# another comment
-ubuntu:22.04
-`
-	err := os.WriteFile(filePath, []byte(content), 0644)
-	if err != nil {
-		t.Fatalf("failed to write test file: %v", err)
-	}
-
-	// Test by running the pull command with file flag
-	cmd := cli.NewPullCommand()
-	err = cmd.Flags().Set("file", filePath)
-	if err != nil {
-		t.Fatalf("failed to set file flag: %v", err)
-	}
-
-	// We can't directly call readImagesFromFile since it's unexported
-	// but we can verify the pull command accepts the flag
-	fileFlag := cmd.Flags().Lookup("file")
-	if fileFlag == nil {
-		t.Fatal("file flag not found")
-	}
-}
-
-func TestReadImagesFromFile_Nonexistent(t *testing.T) {
-	cmd := cli.NewPullCommand()
-	err := cmd.Flags().Set("file", "/nonexistent/file.txt")
-	if err != nil {
-		t.Fatalf("failed to set file flag: %v", err)
-	}
-	// The actual error would happen during RunE execution
-}
-
 // --- Command hierarchy tests ---
 
 func TestCommandHierarchy(t *testing.T) {
@@ -256,7 +220,7 @@ func TestCommandHierarchy(t *testing.T) {
 func TestPullCommand_FlagParsing(t *testing.T) {
 	cmd := cli.NewPullCommand()
 
-	args := []string{"--arch", "arm64", "--os", "linux", "-f", "images.txt", "-j", "5", "--force", "-v"}
+	args := []string{"--arch", "arm64", "--os", "linux", "-f", "images.yaml", "-j", "5", "--force", "-v"}
 	err := cmd.Flags().Parse(args)
 	if err != nil {
 		t.Errorf("failed to parse flags: %v", err)

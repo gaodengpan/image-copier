@@ -1,18 +1,19 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/gaodengpan/image-copier/internal/config"
 	"github.com/gaodengpan/image-copier/internal/core"
@@ -46,13 +47,18 @@ func NewPullCommand() *cobra.Command {
 		filePath    string
 		workerCount int
 		force       bool
+		dryRun      bool
 		verbose     bool
 	)
 
 	cmd := &cobra.Command{
 		Use:   "pull [IMAGE...]",
 		Short: "Pull images through GitHub Actions",
-		Long:  `Pull one or more images by routing them through GitHub Actions when direct pulling is not possible`,
+		Long:  `Pull one or more images by routing them through GitHub Actions when direct pulling is not possible.
+
+Supports two modes:
+1. Command-line mode: Specify images directly as arguments
+2. Manifest mode: Use -f flag with YAML manifest for declarative sync with diff`,
 		Args: func(cmd *cobra.Command, args []string) error {
 			f, _ := cmd.Flags().GetString("file")
 			if len(args) == 0 && f == "" {
@@ -84,31 +90,49 @@ func NewPullCommand() *cobra.Command {
 				osType = cfg.Registry.Os
 			}
 
+			// === YAML manifest 模式（-f 参数）===
+			if filePath != "" {
+				tasks, err := readSyncManifest(filePath, arch, osType)
+				if err != nil {
+					return err
+				}
+				if len(tasks) == 0 {
+					fmt.Println("No images found in manifest.")
+					return nil
+				}
+				baseCfg := &core.Config{
+					GithubOwner:      cfg.Github.Owner,
+					GithubRepo:       cfg.Github.Repo,
+					GithubToken:      cfg.Github.Token,
+					GithubWorkflowID: cfg.Github.WorkflowID,
+					RegistryHost:     cfg.Registry.Host,
+					RegistryUsername:  cfg.Registry.Username,
+					RegistryPassword:  cfg.Registry.Password,
+					RegistryNamespace: cfg.Registry.Namespace,
+					RetryConfig:      cfg.ParseRetryConfig(),
+				}
+				ctx := context.Background()
+				return processSyncTasks(logger, baseCfg, tasks, workerCount, force, dryRun, verbose, ctx)
+			}
+
+			// === 命令式模式（CLI 参数）===
 			pullerCfg := &core.Config{
-				GithubOwner:       cfg.Github.Owner,
-				GithubRepo:        cfg.Github.Repo,
-				GithubToken:       cfg.Github.Token,
-				GithubWorkflowID:  cfg.Github.WorkflowID,
-				RegistryHost:      cfg.Registry.Host,
+				GithubOwner:      cfg.Github.Owner,
+				GithubRepo:       cfg.Github.Repo,
+				GithubToken:      cfg.Github.Token,
+				GithubWorkflowID: cfg.Github.WorkflowID,
+				RegistryHost:     cfg.Registry.Host,
 				RegistryUsername:  cfg.Registry.Username,
 				RegistryPassword:  cfg.Registry.Password,
 				RegistryNamespace: cfg.Registry.Namespace,
-				RegistryArch:      arch,
-				RegistryOs:        osType,
-				Force:             force,
+				RegistryArch:     arch,
+				RegistryOs:       osType,
+				Force:            force,
+				RetryConfig:      cfg.ParseRetryConfig(),
+				DryRun:           dryRun,
 			}
 
 			images := args
-
-			// If file path is provided, read images from file
-			if filePath != "" {
-				fileImages, err := readImagesFromFile(filePath)
-				if err != nil {
-					return fmt.Errorf("failed to read images from file: %w", err)
-				}
-				images = append(images, fileImages...)
-			}
-
 			ctx := context.Background()
 
 			// Unified progress bar display for all modes
@@ -119,9 +143,10 @@ func NewPullCommand() *cobra.Command {
 	// Flags
 	cmd.Flags().StringVar(&arch, "arch", "", "Image architecture (e.g., amd64, arm64)")
 	cmd.Flags().StringVar(&osType, "os", "", "Image operating system (e.g., linux)")
-	cmd.Flags().StringVarP(&filePath, "file", "f", "", "Path to file containing image list (one per line)")
+	cmd.Flags().StringVarP(&filePath, "file", "f", "", "YAML manifest 文件路径")
 	cmd.Flags().IntVarP(&workerCount, "jobs", "j", 3, "Number of concurrent workers")
 	cmd.Flags().BoolVar(&force, "force", false, "Force re-pull even if image exists locally")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show what would be done without making changes")
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show detailed log output above progress bars")
 
 	cmd.SilenceUsage = true
@@ -129,29 +154,6 @@ func NewPullCommand() *cobra.Command {
 	return cmd
 }
 
-func readImagesFromFile(filePath string) ([]string, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open file: %w", err)
-	}
-	defer file.Close()
-
-	var images []string
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		// Skip empty lines and comments
-		if line != "" && line[0] != '#' {
-			images = append(images, line)
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("failed to read file: %w", err)
-	}
-
-	return images, nil
-}
 
 // processImagesWithProgress processes images with a progress bar and worker pool.
 func processImagesWithProgress(logger *logrus.Logger, pullerCfg *core.Config, images []string, workerCount int, verbose bool, ctx context.Context) error {
@@ -224,6 +226,8 @@ func processImagesWithProgress(logger *logrus.Logger, pullerCfg *core.Config, im
 				if err != nil {
 					if errors.Is(err, core.ErrSkipped) {
 						p.UpdateStatus(idx, progress.StatusSkipped, nil)
+					} else if errors.Is(err, core.ErrDryRun) {
+						p.UpdateStatus(idx, progress.StatusDryRun, nil)
 					} else {
 						p.UpdateStatus(idx, progress.StatusFailed, err)
 						failCount.Add(1)
@@ -244,6 +248,213 @@ func processImagesWithProgress(logger *logrus.Logger, pullerCfg *core.Config, im
 
 	if failCount.Load() > 0 {
 		return fmt.Errorf("%d image(s) failed", failCount.Load())
+	}
+	return nil
+}
+
+// SyncManifest represents the YAML manifest structure.
+type SyncManifest struct {
+	Images []SyncImage `yaml:"images"`
+}
+
+// SyncImage represents a single image entry in the manifest.
+type SyncImage struct {
+	Source    string   `yaml:"source"`
+	Platforms []string `yaml:"platforms"`
+}
+
+type syncTask struct {
+	Source string
+	Arch   string
+	Os     string
+}
+
+// displayName returns a human-readable label like "nginx:latest (linux/amd64)"
+func (t syncTask) displayName() string {
+	return fmt.Sprintf("%s (%s/%s)", t.Source, t.Os, t.Arch)
+}
+
+func readSyncManifest(path, defaultArch, defaultOs string) ([]syncTask, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read %s: %w", path, err)
+	}
+	var manifest SyncManifest
+	if err := yaml.Unmarshal(data, &manifest); err != nil {
+		return nil, fmt.Errorf("failed to parse YAML: %w", err)
+	}
+
+	var tasks []syncTask
+	for _, img := range manifest.Images {
+		if img.Source == "" {
+			continue
+		}
+		platforms := img.Platforms
+		if len(platforms) == 0 {
+			platforms = []string{defaultOs + "/" + defaultArch}
+		}
+		for _, plat := range platforms {
+			parts := strings.SplitN(plat, "/", 2)
+			if len(parts) != 2 {
+				return nil, fmt.Errorf("invalid platform format %q (expected os/arch)", plat)
+			}
+			tasks = append(tasks, syncTask{
+				Source: img.Source,
+				Arch:   parts[1],
+				Os:     parts[0],
+			})
+		}
+	}
+	return tasks, nil
+}
+
+func processSyncTasks(logger *logrus.Logger, baseCfg *core.Config, tasks []syncTask,
+	workerCount int, force, dryRun, verbose bool, ctx context.Context) error {
+
+	// === Phase 1: Diff ===
+	fmt.Printf("Checking %d image(s) against destination registry...\n", len(tasks))
+
+	type diffResult struct {
+		task   syncTask
+		exists bool
+	}
+	results := make([]diffResult, len(tasks))
+
+	// Concurrent check (bounded by workerCount)
+	sem := make(chan struct{}, workerCount)
+	var wg sync.WaitGroup
+	for i, t := range tasks {
+		wg.Add(1)
+		go func(idx int, task syncTask) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			sourceID := core.NormalizeSourceID(task.Source)
+			destID := core.BuildDestImageID(baseCfg.RegistryHost, baseCfg.RegistryNamespace, sourceID)
+			exists, _ := core.CheckImageExists(destID, baseCfg.RegistryUsername, baseCfg.RegistryPassword)
+			results[idx] = diffResult{task: task, exists: exists}
+		}(i, t)
+	}
+	wg.Wait()
+
+	// Partition: synced vs needsSync
+	var synced, needsSync []syncTask
+	for _, r := range results {
+		if r.exists && !force {
+			synced = append(synced, r.task)
+		} else {
+			needsSync = append(needsSync, r.task)
+		}
+	}
+
+	// Report diff results
+	fmt.Printf("\n  ✓ %d already synced\n  → %d to sync\n\n", len(synced), len(needsSync))
+	if dryRun {
+		for _, t := range synced {
+			fmt.Printf("  ✓ %s (synced)\n", t.displayName())
+		}
+		for _, t := range needsSync {
+			fmt.Printf("  → %s (will sync)\n", t.displayName())
+		}
+		return nil
+	}
+
+	if len(needsSync) == 0 {
+		fmt.Println("Everything is up to date.")
+		return nil
+	}
+
+	// === Phase 2: Sync ===
+	if workerCount > len(needsSync) {
+		workerCount = len(needsSync)
+	}
+	if workerCount < 1 {
+		workerCount = 1
+	}
+	p := progress.NewProgress(len(needsSync), workerCount)
+	for i, t := range needsSync {
+		p.AddImage(i, t.displayName())
+	}
+
+	if verbose {
+		logger.SetOutput(p.LogWriter())
+	} else {
+		logger.SetOutput(io.Discard)
+	}
+	defer logger.SetOutput(os.Stderr)
+
+	jobs := make(chan int, len(needsSync))
+	for i := range needsSync {
+		jobs <- i
+	}
+	close(jobs)
+
+	var syncWg sync.WaitGroup
+	var failCount atomic.Int32
+
+	for i := 0; i < workerCount; i++ {
+		workerIdx := i
+		syncWg.Add(1)
+		go func() {
+			defer syncWg.Done()
+			for idx := range jobs {
+				task := needsSync[idx]
+				p.UpdateStatus(idx, progress.StatusRunning, nil)
+				startTime := time.Now()
+
+				// Create per-task Config with specific arch/os
+				taskCfg := *baseCfg
+				taskCfg.RegistryArch = task.Arch
+				taskCfg.RegistryOs = task.Os
+				taskCfg.Force = true // diff already confirmed sync needed
+
+				puller := core.NewPuller(&taskCfg, logger)
+				puller.StageCallback = func(stage core.PullStage, polls int) {
+					var pct float64
+					stageIdx := int(stage)
+
+					if stage == core.StageWaitWorkflow && polls > 0 {
+						base := stageWeights[2]
+						ceiling := stageWeights[3]
+						pct = asymptotic(base, ceiling-base, polls)
+					} else if stageIdx > 0 {
+						pct = stageWeights[stageIdx-1]
+					}
+
+					p.UpdateStage(workerIdx, progress.StageInfo{
+						Label:     task.displayName(),
+						StageName: stageNames[stageIdx],
+						Percent:   pct,
+						StartAt:   startTime,
+					})
+				}
+
+				err := puller.PullSingle(ctx, task.Source)
+				elapsed := time.Since(startTime)
+
+				if err != nil {
+					if errors.Is(err, core.ErrSkipped) {
+						p.UpdateStatus(idx, progress.StatusSkipped, nil)
+					} else {
+						p.UpdateStatus(idx, progress.StatusFailed, err)
+						failCount.Add(1)
+					}
+				} else {
+					p.UpdateStatus(idx, progress.StatusCompleted, nil)
+				}
+				p.SetDuration(idx, elapsed)
+				p.UpdateWorker(workerIdx, "")
+				p.Increment()
+			}
+		}()
+	}
+
+	syncWg.Wait()
+	p.Wait()
+
+	if failCount.Load() > 0 {
+		return fmt.Errorf("%d image(s) failed to sync", failCount.Load())
 	}
 	return nil
 }

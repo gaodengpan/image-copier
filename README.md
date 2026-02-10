@@ -10,7 +10,7 @@
 2. 推送到你的国内 Registry（如阿里云 ACR）
 3. 从国内 Registry 高速下载到本地并导入 Docker
 
-整个过程只需一条命令，支持批量处理和并发。
+整个过程只需一条命令，支持批量处理、并发和声明式同步。
 
 ## 工作原理
 
@@ -147,26 +147,45 @@ image-copier pull redis:7-alpine
 ```bash
 # 命令行传入多个镜像
 image-copier pull nginx:latest redis:7-alpine postgres:15
-
-# 从文件读取镜像列表
-image-copier pull -f images.txt
 ```
 
-镜像列表文件格式（每行一个，`#` 开头为注释）：
+### 声明式批量拉取（YAML manifest）
 
-```txt
-nginx:latest
-redis:7-alpine
-# 数据库
-postgres:15
-mysql:8
+通过 `-f` 指定 YAML manifest 文件，实现增量镜像同步——只拉取目标 Registry 中缺失的镜像。
+
+**创建 manifest 文件** `images.yaml`：
+
+```yaml
+images:
+  - source: ghcr.io/tektoncd/pipeline/controller:v1.1.0
+    platforms: [linux/amd64, linux/arm64]    # 可选，默认使用配置中的 arch/os
+  - source: ghcr.io/nginx/nginx-gateway-fabric:2.0.1
+  - source: docker.io/library/nginx:1.25
+    platforms: [linux/amd64]
 ```
+
+**执行同步**：
+
+```bash
+# 预览同步计划（不实际执行）
+image-copier pull -f images.yaml --dry-run
+
+# 执行增量同步
+image-copier pull -f images.yaml
+
+# 强制全量重新同步 + 并发 5
+image-copier pull -f images.yaml --force -j 5 -v
+```
+
+`-f` 模式分两阶段运行：
+1. **Diff 阶段**：并发检查所有镜像在目标 Registry 的存在性，输出差异报告
+2. **Sync 阶段**：仅拉取缺失的镜像，带进度条显示
 
 ### 常用选项
 
 ```bash
 # 并发数（默认 3）
-image-copier pull -j 5 -f images.txt
+image-copier pull -j 5 -f images.yaml
 
 # 强制重新拉取（即使本地已有）
 image-copier pull --force nginx:latest
@@ -178,7 +197,10 @@ image-copier pull -v nginx:latest
 image-copier pull --arch arm64 nginx:latest
 
 # 组合使用
-image-copier pull -v -j 5 --force -f images.txt
+image-copier pull -v -j 5 --force -f images.yaml
+
+# 预览模式（不实际执行任何操作）
+image-copier pull --dry-run nginx:latest redis:alpine
 ```
 
 ### 查看配置
@@ -186,6 +208,10 @@ image-copier pull -v -j 5 --force -f images.txt
 ```bash
 image-copier config show
 ```
+
+sync 分两阶段运行：
+1. **Diff 阶段**：并发检查所有镜像在目标 Registry 的存在性，输出差异报告
+2. **Sync 阶段**：仅拉取缺失的镜像，带进度条显示
 
 ## 配置参考
 
@@ -205,6 +231,11 @@ registry:
   namespace: "your-namespace"                # 命名空间（可选）
   arch: "amd64"                              # 镜像架构（默认 amd64）
   os: "linux"                                # 操作系统（默认 linux）
+
+retry:
+  max_attempts: "3"                          # 最大重试次数
+  initial_interval: "2s"                     # 初始重试间隔
+  max_interval: "30s"                        # 最大重试间隔
 
 log_level: "info"                            # 日志级别：debug/info/warn/error
 ```
@@ -229,6 +260,7 @@ log_level: "info"                            # 日志级别：debug/info/warn/er
 | skopeo copy 失败 | 检查 Registry 凭证是否正确，`skopeo login` 测试连接 |
 | docker load 失败 | 确认 Docker daemon 正在运行 |
 | 进度卡在 workflow running | GitHub Actions 排队中，耐心等待或检查 Actions 页面 |
+| pull -f 报 "invalid platform format" | 检查 manifest 中 platforms 格式是否为 `os/arch`（如 `linux/amd64`） |
 
 **开启调试日志：**
 
@@ -247,11 +279,12 @@ image-copier pull [IMAGE...] [flags]
 
 Flags:
       --arch string    镜像架构 (如 amd64, arm64)
-  -f, --file string    镜像列表文件路径
+  -f, --file string    YAML manifest 文件路径
       --force          强制重新拉取
   -j, --jobs int       并发数 (默认 3)
       --os string      操作系统 (如 linux)
   -v, --verbose        显示详细日志
+      --dry-run        预览模式，不实际执行
 
 image-copier config show     显示当前配置
 image-copier config init     交互式创建配置

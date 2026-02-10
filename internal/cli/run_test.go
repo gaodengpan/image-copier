@@ -106,8 +106,8 @@ func TestNewPullCommand_RunE_WithConfig(t *testing.T) {
 func TestNewPullCommand_RunE_WithFile(t *testing.T) {
 	setTestEnv(t)
 	tmpDir := t.TempDir()
-	filePath := filepath.Join(tmpDir, "images.txt")
-	os.WriteFile(filePath, []byte("nginx:latest\nredis:alpine\n"), 0644)
+	filePath := filepath.Join(tmpDir, "images.yaml")
+	os.WriteFile(filePath, []byte("images:\n  - source: nginx:latest\n  - source: redis:alpine\n"), 0644)
 
 	cmd := NewPullCommand()
 	cmd.SilenceUsage = true
@@ -122,7 +122,7 @@ func TestNewPullCommand_RunE_BadFile(t *testing.T) {
 	cmd := NewPullCommand()
 	cmd.SilenceUsage = true
 	cmd.SilenceErrors = true
-	cmd.SetArgs([]string{"-f", "/nonexistent/file.txt"})
+	cmd.SetArgs([]string{"-f", "/nonexistent/manifest.yaml"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Error("expected error for nonexistent file")
@@ -158,6 +158,7 @@ func TestNewConfigInitCommand_RunE_ExistingFile(t *testing.T) {
 
 // TestNewConfigShowCommand_RunE_NoConfig tests config show without config
 func TestNewConfigShowCommand_RunE_NoConfig(t *testing.T) {
+	// Save current environment variables
 	envVars := map[string]string{
 		"GITHUB_OWNER":      os.Getenv("GITHUB_OWNER"),
 		"GITHUB_REPO":       os.Getenv("GITHUB_REPO"),
@@ -175,6 +176,8 @@ func TestNewConfigShowCommand_RunE_NoConfig(t *testing.T) {
 			}
 		}
 	}()
+
+	// Unset all environment variables
 	os.Unsetenv("GITHUB_OWNER")
 	os.Unsetenv("GITHUB_REPO")
 	os.Unsetenv("GITHUB_TOKEN")

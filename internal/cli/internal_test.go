@@ -8,78 +8,6 @@ import (
 	"testing"
 )
 
-// --- readImagesFromFile tests ---
-
-func TestReadImagesFromFile(t *testing.T) {
-	tmpDir := t.TempDir()
-	filePath := filepath.Join(tmpDir, "images.txt")
-
-	content := `nginx:latest
-# this is a comment
-redis:alpine
-
-postgres:15
-# another comment
-ubuntu:22.04
-`
-	os.WriteFile(filePath, []byte(content), 0644)
-
-	images, err := readImagesFromFile(filePath)
-	if err != nil {
-		t.Fatalf("readImagesFromFile failed: %v", err)
-	}
-
-	expected := []string{"nginx:latest", "redis:alpine", "postgres:15", "ubuntu:22.04"}
-	if len(images) != len(expected) {
-		t.Fatalf("expected %d images, got %d: %v", len(expected), len(images), images)
-	}
-
-	for i, img := range images {
-		if img != expected[i] {
-			t.Errorf("expected images[%d] = '%s', got '%s'", i, expected[i], img)
-		}
-	}
-}
-
-func TestReadImagesFromFile_EmptyFile(t *testing.T) {
-	tmpDir := t.TempDir()
-	filePath := filepath.Join(tmpDir, "empty.txt")
-	os.WriteFile(filePath, []byte(""), 0644)
-
-	images, err := readImagesFromFile(filePath)
-	if err != nil {
-		t.Fatalf("readImagesFromFile failed: %v", err)
-	}
-	if len(images) != 0 {
-		t.Errorf("expected 0 images, got %d", len(images))
-	}
-}
-
-func TestReadImagesFromFile_OnlyComments(t *testing.T) {
-	tmpDir := t.TempDir()
-	filePath := filepath.Join(tmpDir, "comments.txt")
-	content := `# comment 1
-# comment 2
-# comment 3
-`
-	os.WriteFile(filePath, []byte(content), 0644)
-
-	images, err := readImagesFromFile(filePath)
-	if err != nil {
-		t.Fatalf("readImagesFromFile failed: %v", err)
-	}
-	if len(images) != 0 {
-		t.Errorf("expected 0 images, got %d", len(images))
-	}
-}
-
-func TestReadImagesFromFile_Nonexistent(t *testing.T) {
-	_, err := readImagesFromFile("/nonexistent/file.txt")
-	if err == nil {
-		t.Error("expected error for nonexistent file")
-	}
-}
-
 // --- maskToken tests ---
 
 func TestMaskToken(t *testing.T) {
@@ -180,6 +108,140 @@ func TestValidateGitHubToken_EmptyOwner(t *testing.T) {
 
 // --- confirmDeletion can't be easily tested (reads stdin + mousetrap) ---
 // --- RunWizard can't be easily tested (reads stdin) ---
+
+// --- readSyncManifest tests ---
+
+func TestReadSyncManifest(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "manifest.yaml")
+
+	content := `images:
+  - source: ghcr.io/tektoncd/pipeline/controller:v1.1.0
+    platforms: [linux/amd64, linux/arm64]
+  - source: ghcr.io/nginx/nginx-gateway-fabric:2.0.1
+  - source: docker.io/library/nginx:1.25
+    platforms: [linux/amd64]
+`
+	os.WriteFile(filePath, []byte(content), 0644)
+
+	tasks, err := readSyncManifest(filePath, "amd64", "linux")
+	if err != nil {
+		t.Fatalf("readSyncManifest failed: %v", err)
+	}
+
+	// Expected: controller*2 + nginx-gateway*1 + nginx*1 = 4 tasks
+	if len(tasks) != 4 {
+		t.Fatalf("expected 4 tasks, got %d: %v", len(tasks), tasks)
+	}
+
+	// First image: two platforms
+	if tasks[0].Source != "ghcr.io/tektoncd/pipeline/controller:v1.1.0" || tasks[0].Arch != "amd64" || tasks[0].Os != "linux" {
+		t.Errorf("task[0] = %+v, unexpected", tasks[0])
+	}
+	if tasks[1].Source != "ghcr.io/tektoncd/pipeline/controller:v1.1.0" || tasks[1].Arch != "arm64" || tasks[1].Os != "linux" {
+		t.Errorf("task[1] = %+v, unexpected", tasks[1])
+	}
+
+	// Second image: default platform
+	if tasks[2].Source != "ghcr.io/nginx/nginx-gateway-fabric:2.0.1" || tasks[2].Arch != "amd64" || tasks[2].Os != "linux" {
+		t.Errorf("task[2] = %+v, unexpected (should use default platform)", tasks[2])
+	}
+
+	// Third image: explicit single platform
+	if tasks[3].Source != "docker.io/library/nginx:1.25" || tasks[3].Arch != "amd64" || tasks[3].Os != "linux" {
+		t.Errorf("task[3] = %+v, unexpected", tasks[3])
+	}
+}
+
+func TestReadSyncManifest_DefaultPlatform(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "manifest.yaml")
+
+	content := `images:
+  - source: nginx:latest
+`
+	os.WriteFile(filePath, []byte(content), 0644)
+
+	tasks, err := readSyncManifest(filePath, "arm64", "linux")
+	if err != nil {
+		t.Fatalf("readSyncManifest failed: %v", err)
+	}
+
+	if len(tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(tasks))
+	}
+	if tasks[0].Arch != "arm64" || tasks[0].Os != "linux" {
+		t.Errorf("expected default platform linux/arm64, got %s/%s", tasks[0].Os, tasks[0].Arch)
+	}
+}
+
+func TestReadSyncManifest_EmptyImages(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "manifest.yaml")
+
+	content := `images: []
+`
+	os.WriteFile(filePath, []byte(content), 0644)
+
+	tasks, err := readSyncManifest(filePath, "amd64", "linux")
+	if err != nil {
+		t.Fatalf("readSyncManifest failed: %v", err)
+	}
+	if len(tasks) != 0 {
+		t.Errorf("expected 0 tasks, got %d", len(tasks))
+	}
+}
+
+func TestReadSyncManifest_InvalidPlatformFormat(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "manifest.yaml")
+
+	content := `images:
+  - source: nginx:latest
+    platforms: [amd64]
+`
+	os.WriteFile(filePath, []byte(content), 0644)
+
+	_, err := readSyncManifest(filePath, "amd64", "linux")
+	if err == nil {
+		t.Error("expected error for invalid platform format")
+	}
+	if !strings.Contains(err.Error(), "invalid platform format") {
+		t.Errorf("expected 'invalid platform format' error, got: %v", err)
+	}
+}
+
+func TestReadSyncManifest_Nonexistent(t *testing.T) {
+	_, err := readSyncManifest("/nonexistent/manifest.yaml", "amd64", "linux")
+	if err == nil {
+		t.Error("expected error for nonexistent file")
+	}
+}
+
+func TestReadSyncManifest_InvalidYAML(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "manifest.yaml")
+
+	content := `this is not valid yaml: [[[`
+	os.WriteFile(filePath, []byte(content), 0644)
+
+	_, err := readSyncManifest(filePath, "amd64", "linux")
+	if err == nil {
+		t.Error("expected error for invalid YAML")
+	}
+}
+
+func TestSyncTask_DisplayName(t *testing.T) {
+	task := syncTask{
+		Source: "nginx:latest",
+		Arch:   "amd64",
+		Os:     "linux",
+	}
+	expected := "nginx:latest (linux/amd64)"
+	if got := task.displayName(); got != expected {
+		t.Errorf("displayName() = %q, want %q", got, expected)
+	}
+}
 
 // --- ConfigData struct test ---
 

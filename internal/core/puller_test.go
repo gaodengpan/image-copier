@@ -4,23 +4,25 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
+	"github.com/gaodengpan/image-copier/pkg/retry"
 	"github.com/sirupsen/logrus"
 )
 
 func newTestPuller(cfg *Config) *Puller {
 	if cfg == nil {
 		cfg = &Config{
-			GithubOwner:       "owner",
-			GithubRepo:        "repo",
-			GithubToken:       "token",
-			GithubWorkflowID:  "workflow.yaml",
-			RegistryHost:      "registry.example.com",
-			RegistryUsername:   "user",
-			RegistryPassword:   "pass",
-			RegistryNamespace:  "ns",
-			RegistryArch:      "amd64",
-			RegistryOs:        "linux",
+			GithubOwner:      "owner",
+			GithubRepo:       "repo",
+			GithubToken:      "token",
+			GithubWorkflowID: "workflow.yaml",
+			RegistryHost:     "registry.example.com",
+			RegistryUsername:  "user",
+			RegistryPassword:  "pass",
+			RegistryNamespace: "ns",
+			RegistryArch:     "amd64",
+			RegistryOs:       "linux",
 		}
 	}
 	logger := logrus.New()
@@ -52,6 +54,45 @@ func TestNewPuller(t *testing.T) {
 	}
 }
 
+func TestNewPuller_UsesRetryConfig(t *testing.T) {
+	customRC := &retry.Config{
+		MaxAttempts:     10,
+		InitialInterval: 5 * time.Second,
+		MaxInterval:     120 * time.Second,
+	}
+	cfg := &Config{
+		GithubOwner:  "owner",
+		RegistryHost: "host",
+		RetryConfig:  customRC,
+	}
+	logger := logrus.New()
+	p := NewPuller(cfg, logger)
+
+	if p.RetryConfig != customRC {
+		t.Error("expected Puller to use the provided RetryConfig")
+	}
+	if p.RetryConfig.MaxAttempts != 10 {
+		t.Errorf("MaxAttempts = %d, want 10", p.RetryConfig.MaxAttempts)
+	}
+}
+
+func TestNewPuller_NilRetryConfigUsesDefault(t *testing.T) {
+	cfg := &Config{
+		GithubOwner:  "owner",
+		RegistryHost: "host",
+	}
+	logger := logrus.New()
+	p := NewPuller(cfg, logger)
+
+	defaults := retry.DefaultConfig()
+	if p.RetryConfig.MaxAttempts != defaults.MaxAttempts {
+		t.Errorf("MaxAttempts = %d, want default %d", p.RetryConfig.MaxAttempts, defaults.MaxAttempts)
+	}
+	if p.RetryConfig.InitialInterval != defaults.InitialInterval {
+		t.Errorf("InitialInterval = %v, want default %v", p.RetryConfig.InitialInterval, defaults.InitialInterval)
+	}
+}
+
 // --- ErrSkipped tests ---
 
 func TestErrSkipped(t *testing.T) {
@@ -65,11 +106,22 @@ func TestErrSkipped(t *testing.T) {
 	}
 }
 
-// --- normalizeSourceID tests ---
+// --- ErrDryRun tests ---
+
+func TestErrDryRun(t *testing.T) {
+	if !errors.Is(ErrDryRun, ErrDryRun) {
+		t.Error("expected ErrDryRun to match itself via errors.Is")
+	}
+
+	wrapped := fmt.Errorf("wrapped: %w", ErrDryRun)
+	if !errors.Is(wrapped, ErrDryRun) {
+		t.Error("expected wrapped ErrDryRun to match via errors.Is")
+	}
+}
+
+// --- NormalizeSourceID tests ---
 
 func TestNormalizeSourceID_SingleSegment(t *testing.T) {
-	p := newTestPuller(nil)
-
 	tests := []struct {
 		input    string
 		expected string
@@ -83,17 +135,15 @@ func TestNormalizeSourceID_SingleSegment(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			got := p.normalizeSourceID(tt.input)
+			got := NormalizeSourceID(tt.input)
 			if got != tt.expected {
-				t.Errorf("normalizeSourceID(%q) = %q, want %q", tt.input, got, tt.expected)
+				t.Errorf("NormalizeSourceID(%q) = %q, want %q", tt.input, got, tt.expected)
 			}
 		})
 	}
 }
 
 func TestNormalizeSourceID_TwoSegments(t *testing.T) {
-	p := newTestPuller(nil)
-
 	tests := []struct {
 		input    string
 		expected string
@@ -110,17 +160,15 @@ func TestNormalizeSourceID_TwoSegments(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			got := p.normalizeSourceID(tt.input)
+			got := NormalizeSourceID(tt.input)
 			if got != tt.expected {
-				t.Errorf("normalizeSourceID(%q) = %q, want %q", tt.input, got, tt.expected)
+				t.Errorf("NormalizeSourceID(%q) = %q, want %q", tt.input, got, tt.expected)
 			}
 		})
 	}
 }
 
 func TestNormalizeSourceID_FullyQualified(t *testing.T) {
-	p := newTestPuller(nil)
-
 	tests := []struct {
 		input    string
 		expected string
@@ -137,22 +185,17 @@ func TestNormalizeSourceID_FullyQualified(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			got := p.normalizeSourceID(tt.input)
+			got := NormalizeSourceID(tt.input)
 			if got != tt.expected {
-				t.Errorf("normalizeSourceID(%q) = %q, want %q", tt.input, got, tt.expected)
+				t.Errorf("NormalizeSourceID(%q) = %q, want %q", tt.input, got, tt.expected)
 			}
 		})
 	}
 }
 
-// --- buildDestImageID tests ---
+// --- BuildDestImageID tests ---
 
 func TestBuildDestImageID_WithNamespace(t *testing.T) {
-	p := newTestPuller(&Config{
-		RegistryHost:      "registry.example.com",
-		RegistryNamespace: "mynamespace",
-	})
-
 	tests := []struct {
 		sourceID string
 		expected string
@@ -163,36 +206,26 @@ func TestBuildDestImageID_WithNamespace(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.sourceID, func(t *testing.T) {
-			got := p.buildDestImageID(tt.sourceID)
+			got := BuildDestImageID("registry.example.com", "mynamespace", tt.sourceID)
 			if got != tt.expected {
-				t.Errorf("buildDestImageID(%q) = %q, want %q", tt.sourceID, got, tt.expected)
+				t.Errorf("BuildDestImageID(%q) = %q, want %q", tt.sourceID, got, tt.expected)
 			}
 		})
 	}
 }
 
 func TestBuildDestImageID_WithoutNamespace(t *testing.T) {
-	p := newTestPuller(&Config{
-		RegistryHost:      "registry.example.com",
-		RegistryNamespace: "",
-	})
-
-	got := p.buildDestImageID("docker.io/library/nginx")
+	got := BuildDestImageID("registry.example.com", "", "docker.io/library/nginx")
 	expected := "registry.example.com/docker.io/library/nginx"
 	if got != expected {
-		t.Errorf("buildDestImageID = %q, want %q", got, expected)
+		t.Errorf("BuildDestImageID = %q, want %q", got, expected)
 	}
 }
 
 func TestBuildDestImageID_Truncation(t *testing.T) {
-	p := newTestPuller(&Config{
-		RegistryHost:      "registry.example.com",
-		RegistryNamespace: "ns",
-	})
-
 	// A very long source ID should be truncated to 40 chars after normalization
 	longSource := "docker.io/library/a-very-long-image-name-that-will-be-truncated-for-sure"
-	got := p.buildDestImageID(longSource)
+	got := BuildDestImageID("registry.example.com", "ns", longSource)
 
 	// The normalized part (slashes replaced with underscores) should be at most 40 chars
 	// Format: registry.example.com/ns/<normalized>
@@ -273,16 +306,16 @@ func TestPuller_NotifyStage_Called(t *testing.T) {
 
 func TestConfig_Fields(t *testing.T) {
 	cfg := &Config{
-		GithubOwner:       "owner",
-		GithubRepo:        "repo",
-		GithubToken:       "token",
-		GithubWorkflowID:  "wf.yaml",
-		RegistryHost:      "host",
-		RegistryUsername:   "user",
-		RegistryPassword:   "pass",
-		RegistryNamespace:  "ns",
-		RegistryArch:      "arm64",
-		RegistryOs:        "linux",
+		GithubOwner:      "owner",
+		GithubRepo:       "repo",
+		GithubToken:      "token",
+		GithubWorkflowID: "wf.yaml",
+		RegistryHost:     "host",
+		RegistryUsername:  "user",
+		RegistryPassword:  "pass",
+		RegistryNamespace: "ns",
+		RegistryArch:     "arm64",
+		RegistryOs:       "linux",
 	}
 
 	if cfg.GithubOwner != "owner" {

@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"time"
 
+	"github.com/gaodengpan/image-copier/pkg/retry"
 	"github.com/spf13/viper"
 )
 
@@ -119,6 +122,39 @@ func ValidateConfig(cfg *Config) error {
 
 func validateConfig(cfg *Config) error {
 	return ValidateConfig(cfg)
+}
+
+// ParseRetryConfig converts string-based Retry config fields into a typed *retry.Config.
+// Empty or invalid fields fall back to retry.DefaultConfig() values.
+func (c *Config) ParseRetryConfig() *retry.Config {
+	defaults := retry.DefaultConfig()
+
+	maxAttempts := defaults.MaxAttempts
+	if c.Retry.MaxAttempts != "" {
+		if v, err := strconv.Atoi(c.Retry.MaxAttempts); err == nil && v > 0 {
+			maxAttempts = v
+		}
+	}
+
+	initialInterval := defaults.InitialInterval
+	if c.Retry.InitialInterval != "" {
+		if v, err := time.ParseDuration(c.Retry.InitialInterval); err == nil && v > 0 {
+			initialInterval = v
+		}
+	}
+
+	maxInterval := defaults.MaxInterval
+	if c.Retry.MaxInterval != "" {
+		if v, err := time.ParseDuration(c.Retry.MaxInterval); err == nil && v > 0 {
+			maxInterval = v
+		}
+	}
+
+	return &retry.Config{
+		MaxAttempts:     maxAttempts,
+		InitialInterval: initialInterval,
+		MaxInterval:     maxInterval,
+	}
 }
 
 // GetConfigPath returns the path to the config file if it exists.

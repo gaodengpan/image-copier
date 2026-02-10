@@ -20,6 +20,7 @@ func TestImageStatus_String(t *testing.T) {
 		{StatusCompleted, "completed"},
 		{StatusFailed, "failed"},
 		{StatusSkipped, "skipped"},
+		{StatusDryRun, "dry-run"},
 		{ImageStatus(99), "unknown"},
 	}
 

@@ -51,10 +51,15 @@ type Config struct {
 	RegistryArch   string
 	RegistryOs     string
 	Force          bool
+	RetryConfig    *retry.Config
+	DryRun         bool
 }
 
 // ErrSkipped indicates an image was skipped because it already exists locally.
 var ErrSkipped = fmt.Errorf("image already exists locally")
+
+// ErrDryRun indicates no changes were made because dry-run mode is enabled.
+var ErrDryRun = fmt.Errorf("dry-run: no changes made")
 
 // CheckLocalImageExists checks whether the given image is available in the local Docker daemon.
 func (p *Puller) CheckLocalImageExists(imageID string) (bool, error) {
@@ -70,9 +75,13 @@ func (p *Puller) CheckLocalImageExists(imageID string) (bool, error) {
 
 // NewPuller creates a new Puller instance
 func NewPuller(config *Config, logger *logrus.Logger) *Puller {
+	rc := config.RetryConfig
+	if rc == nil {
+		rc = retry.DefaultConfig()
+	}
 	return &Puller{
 		Config:      config,
-		RetryConfig: retry.DefaultConfig(),
+		RetryConfig: rc,
 		Logger:      logger,
 	}
 }
@@ -87,8 +96,8 @@ func (p *Puller) notifyStage(stage PullStage, polls int) {
 func (p *Puller) PullSingle(ctx context.Context, imageID string) error {
 	p.Logger.Infof("Processing image: %s", imageID)
 
-	sourceID := p.normalizeSourceID(imageID)
-	destImageID := p.buildDestImageID(sourceID)
+	sourceID := NormalizeSourceID(imageID)
+	destImageID := BuildDestImageID(p.Config.RegistryHost, p.Config.RegistryNamespace, sourceID)
 
 	// Check if image already exists in the local Docker daemon
 	p.notifyStage(StageCheckLocal, 0)
@@ -104,9 +113,18 @@ func (p *Puller) PullSingle(ctx context.Context, imageID string) error {
 
 	// Check if image already exists
 	p.notifyStage(StageCheckRegistry, 0)
-	exists, err := p.checkImageExists(destImageID)
+	exists, err := CheckImageExists(destImageID, p.Config.RegistryUsername, p.Config.RegistryPassword)
 	if err != nil {
 		return fmt.Errorf("failed to check if image exists: %w", err)
+	}
+
+	if p.Config.DryRun {
+		if exists {
+			p.Logger.Infof("[dry-run] %s → %s: image exists in registry, would copy and load", sourceID, destImageID)
+		} else {
+			p.Logger.Infof("[dry-run] %s → %s: would trigger workflow, then copy and load", sourceID, destImageID)
+		}
+		return ErrDryRun
 	}
 
 	if !exists {
@@ -137,7 +155,9 @@ func (p *Puller) PullSingle(ctx context.Context, imageID string) error {
 	return nil
 }
 
-func (p *Puller) normalizeSourceID(imageID string) string {
+// NormalizeSourceID normalizes a user-provided image ID to a fully-qualified
+// source reference (e.g. "nginx" → "docker.io/library/nginx:latest").
+func NormalizeSourceID(imageID string) string {
 	segs := strings.Split(imageID, "/")
 
 	var normalized string
@@ -171,30 +191,33 @@ func (p *Puller) normalizeSourceID(imageID string) string {
 	return normalized
 }
 
-func (p *Puller) buildDestImageID(sourceID string) string {
-	if p.Config.RegistryNamespace == "" {
-		return fmt.Sprintf("%s/%s", p.Config.RegistryHost, sourceID)
+// BuildDestImageID constructs the destination registry image path from a
+// normalized source ID and registry configuration.
+func BuildDestImageID(registryHost, registryNamespace, sourceID string) string {
+	if registryNamespace == "" {
+		return fmt.Sprintf("%s/%s", registryHost, sourceID)
 	}
-	
+
 	// Replace slashes with underscores and limit length
 	normalized := strings.ReplaceAll(sourceID, "/", "_")
 	if len(normalized) > 40 {
 		normalized = normalized[:40]
 	}
-	
-	return fmt.Sprintf("%s/%s/%s", p.Config.RegistryHost, p.Config.RegistryNamespace, normalized)
+
+	return fmt.Sprintf("%s/%s/%s", registryHost, registryNamespace, normalized)
 }
 
-func (p *Puller) checkImageExists(destImageID string) (bool, error) {
-	creds := fmt.Sprintf("%s:%s", p.Config.RegistryUsername, p.Config.RegistryPassword)
+// CheckImageExists checks if an image exists in a registry using skopeo.
+func CheckImageExists(destImageID, username, password string) (bool, error) {
+	creds := fmt.Sprintf("%s:%s", username, password)
 	cmd := exec.Command("skopeo", "inspect", "--creds="+creds, "docker://"+destImageID)
-	
+
 	_, err := cmd.Output()
 	if err != nil {
 		// If command fails, assume image doesn't exist
 		return false, nil
 	}
-	
+
 	return true, nil
 }
 

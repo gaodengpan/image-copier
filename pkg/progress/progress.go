@@ -30,6 +30,7 @@ const (
 	StatusCompleted
 	StatusFailed
 	StatusSkipped
+	StatusDryRun
 )
 
 func (s ImageStatus) String() string {
@@ -44,6 +45,8 @@ func (s ImageStatus) String() string {
 		return "failed"
 	case StatusSkipped:
 		return "skipped"
+	case StatusDryRun:
+		return "dry-run"
 	default:
 		return "unknown"
 	}
@@ -276,7 +279,7 @@ func (p *Progress) printSummary() {
 
 	totalDuration := time.Since(p.startedAt)
 
-	var succeeded, failed, skipped int
+	var succeeded, failed, skipped, dryRun int
 
 	for _, img := range p.images {
 		if img == nil {
@@ -289,11 +292,18 @@ func (p *Progress) printSummary() {
 			failed++
 		case StatusSkipped:
 			skipped++
+		case StatusDryRun:
+			dryRun++
 		}
 	}
 
-	fmt.Printf("\nSummary: %d succeeded, %d skipped, %d failed | Total: %s\n",
-		succeeded, skipped, failed, formatDuration(totalDuration))
+	if dryRun > 0 {
+		fmt.Printf("\nSummary: %d succeeded, %d skipped, %d dry-run, %d failed | Total: %s\n",
+			succeeded, skipped, dryRun, failed, formatDuration(totalDuration))
+	} else {
+		fmt.Printf("\nSummary: %d succeeded, %d skipped, %d failed | Total: %s\n",
+			succeeded, skipped, failed, formatDuration(totalDuration))
+	}
 
 	for _, img := range p.images {
 		if img == nil {
@@ -305,6 +315,8 @@ func (p *Progress) printSummary() {
 			fmt.Printf("  ✓ %s (%s)\n", img.Image, dur)
 		case StatusSkipped:
 			fmt.Printf("  ◦ %s (%s)\n", img.Image, dur)
+		case StatusDryRun:
+			fmt.Printf("  ~ %s (%s)\n", img.Image, dur)
 		case StatusFailed:
 			msg := fmt.Sprintf("  ✗ %s (%s)", img.Image, dur)
 			if img.Error != nil {
