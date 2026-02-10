@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
+	"sync/atomic"
 
 	"github.com/example/image-copier/internal/config"
 	"github.com/example/image-copier/internal/core"
@@ -17,7 +19,6 @@ func NewBatchCommand() *cobra.Command {
 	var (
 		filePath    string
 		workerCount int
-		showDetails bool
 	)
 
 	cmd := &cobra.Command{
@@ -70,13 +71,12 @@ func NewBatchCommand() *cobra.Command {
 			}
 
 			// Process images with progress bar
-			return processImagesWithProgress(logger, pullerCfg, images, workerCount, showDetails, ctx)
+			return processImagesWithProgress(logger, pullerCfg, images, workerCount, ctx)
 		},
 	}
 
 	cmd.Flags().StringVarP(&filePath, "file", "f", "", "Path to file containing image list (one per line)")
 	cmd.Flags().IntVarP(&workerCount, "jobs", "j", 3, "Number of concurrent workers")
-	cmd.Flags().BoolVarP(&showDetails, "verbose", "v", false, "Show detailed progress for each image")
 
 	return cmd
 }
@@ -106,7 +106,7 @@ func readImagesFromFile(filePath string) ([]string, error) {
 }
 
 // processImagesWithProgress processes images with a progress bar and worker pool
-func processImagesWithProgress(logger *logrus.Logger, pullerCfg *core.Config, images []string, workerCount int, showDetails bool, ctx context.Context) error {
+func processImagesWithProgress(logger *logrus.Logger, pullerCfg *core.Config, images []string, workerCount int, ctx context.Context) error {
 	// Validate worker count
 	if workerCount < 1 {
 		workerCount = 1
@@ -115,12 +115,50 @@ func processImagesWithProgress(logger *logrus.Logger, pullerCfg *core.Config, im
 		workerCount = len(images)
 	}
 
-	// Create batch progress manager
-	bp := progress.NewBatchProgress(images, showDetails)
+	// Create progress manager
+	p := progress.NewProgress(len(images))
+	for i, img := range images {
+		p.AddImage(i, img)
+	}
 
-	// Process images with worker pool
-	return bp.Process(workerCount, func(index int, image string) error {
-		puller := core.NewPuller(pullerCfg, logger)
-		return puller.PullSingle(ctx, image)
-	})
+	// Create worker pool
+	jobs := make(chan int, len(images))
+	for i := range images {
+		jobs <- i
+	}
+	close(jobs)
+
+	var wg sync.WaitGroup
+	var failCount atomic.Int32
+
+	// Start workers
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for idx := range jobs {
+				p.UpdateStatus(idx, progress.StatusRunning, nil)
+
+				puller := core.NewPuller(pullerCfg, logger)
+				err := puller.PullSingle(ctx, images[idx])
+
+				if err != nil {
+					p.UpdateStatus(idx, progress.StatusFailed, err)
+					failCount.Add(1)
+				} else {
+					p.UpdateStatus(idx, progress.StatusCompleted, nil)
+				}
+
+				p.Increment()
+			}
+		}()
+	}
+
+	wg.Wait()
+	p.Wait()
+
+	if failCount.Load() > 0 {
+		return fmt.Errorf("%d image(s) failed", failCount.Load())
+	}
+	return nil
 }
