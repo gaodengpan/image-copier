@@ -50,25 +50,25 @@ brew install docker skopeo
 sudo apt-get update && sudo apt-get install docker.io skopeo
 ```
 
-### 2. GitHub 仓库与 Actions 配置
-
-Image Copier 依赖你自己的 GitHub 仓库来运行 Actions Workflow，需要完成以下步骤：
-
-1. **Fork 本仓库**（或确保你的仓库中包含 `.github/workflows/image-copier-v2.yaml`）
-2. **配置仓库 Secret**：进入仓库 Settings → Secrets and variables → Actions，添加：
-   - `DEST_CREDS`：国内 Registry 凭证，格式为 `username:password`
-3. **生成 GitHub Personal Access Token**：
-   - 访问 https://github.com/settings/tokens
-   - 勾选 `repo` 和 `workflow` 权限
-   - 保存生成的 token（后续配置 CLI 时需要填入）
-
-### 3. 国内 Registry 账号
+### 2. 国内 Registry 账号
 
 你需要一个国内容器镜像仓库（如阿里云 ACR、腾讯云 TCR 等），准备好以下信息：
 
 - Registry 地址（如 `registry.cn-hangzhou.aliyuncs.com`）
 - 用户名和密码
 - 命名空间（可选）
+
+### 3. GitHub 仓库与 Actions 配置
+
+Image Copier 依赖你自己的 GitHub 仓库来运行 Actions Workflow，需要完成以下步骤：
+
+1. **Fork 本仓库**（或确保你的仓库中包含 `.github/workflows/image-copier-v2.yaml`）
+2. **配置仓库 Secret**：进入仓库 Settings → Secrets and variables → Actions，添加：
+   - `DEST_CREDS`：国内 Registry 凭证，格式为 `username:password`（即上一步准备的账号信息）
+3. **生成 GitHub Personal Access Token**：
+   - 访问 https://github.com/settings/tokens
+   - 勾选 `repo` 和 `workflow` 权限
+   - 保存生成的 token（后续配置 CLI 时需要填入）
 
 ## 安装
 
