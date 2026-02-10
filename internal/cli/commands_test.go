@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/example/image-copier/internal/cli"
+	"github.com/gaodengpan/image-copier/internal/cli"
 )
 
 // --- NewPullCommand tests ---
@@ -17,8 +17,8 @@ func TestNewPullCommand(t *testing.T) {
 		t.Fatal("expected non-nil pull command")
 	}
 
-	if cmd.Use != "pull IMAGE_ID" {
-		t.Errorf("expected Use 'pull IMAGE_ID', got '%s'", cmd.Use)
+	if cmd.Use != "pull [IMAGE...]" {
+		t.Errorf("expected Use 'pull [IMAGE...]', got '%s'", cmd.Use)
 	}
 
 	if cmd.Short == "" {
@@ -29,13 +29,13 @@ func TestNewPullCommand(t *testing.T) {
 		t.Error("expected Long to be set")
 	}
 
-	// Verify Args requires exactly 1 argument
+	// Verify Args validator is set
 	if cmd.Args == nil {
 		t.Error("expected Args validator to be set")
 	}
 
-	// Verify flags
-	flags := []string{"arch", "os", "multi-arch"}
+	// Verify flags (original + merged from batch)
+	flags := []string{"arch", "os", "multi-arch", "file", "jobs", "force", "verbose"}
 	for _, flag := range flags {
 		if cmd.Flags().Lookup(flag) == nil {
 			t.Errorf("expected flag '%s' to exist", flag)
@@ -69,54 +69,42 @@ func TestNewPullCommand_FlagDefaults(t *testing.T) {
 	if multiArchFlag.DefValue != "false" {
 		t.Errorf("expected 'false' default for multi-arch, got '%s'", multiArchFlag.DefValue)
 	}
-}
-
-// --- NewBatchCommand tests ---
-
-func TestNewBatchCommand(t *testing.T) {
-	cmd := cli.NewBatchCommand()
-
-	if cmd == nil {
-		t.Fatal("expected non-nil batch command")
-	}
-
-	if cmd.Use != "batch" {
-		t.Errorf("expected Use 'batch', got '%s'", cmd.Use)
-	}
-
-	if cmd.Short == "" {
-		t.Error("expected Short to be set")
-	}
-
-	if cmd.Long == "" {
-		t.Error("expected Long to be set")
-	}
-
-	// Verify flags
-	flags := []string{"file", "jobs"}
-	for _, flag := range flags {
-		if cmd.Flags().Lookup(flag) == nil {
-			t.Errorf("expected flag '%s' to exist", flag)
-		}
-	}
-}
-
-func TestNewBatchCommand_FlagDefaults(t *testing.T) {
-	cmd := cli.NewBatchCommand()
 
 	fileFlag := cmd.Flags().Lookup("file")
+	if fileFlag == nil {
+		t.Fatal("file flag not found")
+	}
 	if fileFlag.DefValue != "" {
 		t.Errorf("expected empty default for file, got '%s'", fileFlag.DefValue)
 	}
 
 	jobsFlag := cmd.Flags().Lookup("jobs")
+	if jobsFlag == nil {
+		t.Fatal("jobs flag not found")
+	}
 	if jobsFlag.DefValue != "3" {
 		t.Errorf("expected '3' default for jobs, got '%s'", jobsFlag.DefValue)
 	}
+
+	forceFlag := cmd.Flags().Lookup("force")
+	if forceFlag == nil {
+		t.Fatal("force flag not found")
+	}
+	if forceFlag.DefValue != "false" {
+		t.Errorf("expected 'false' default for force, got '%s'", forceFlag.DefValue)
+	}
+
+	verboseFlag := cmd.Flags().Lookup("verbose")
+	if verboseFlag == nil {
+		t.Fatal("verbose flag not found")
+	}
+	if verboseFlag.DefValue != "false" {
+		t.Errorf("expected 'false' default for verbose, got '%s'", verboseFlag.DefValue)
+	}
 }
 
-func TestNewBatchCommand_ShortFlags(t *testing.T) {
-	cmd := cli.NewBatchCommand()
+func TestNewPullCommand_ShortFlags(t *testing.T) {
+	cmd := cli.NewPullCommand()
 
 	// Verify shorthand flags
 	fileFlag := cmd.Flags().ShorthandLookup("f")
@@ -127,6 +115,11 @@ func TestNewBatchCommand_ShortFlags(t *testing.T) {
 	jobsFlag := cmd.Flags().ShorthandLookup("j")
 	if jobsFlag == nil {
 		t.Error("expected shorthand 'j' for jobs flag")
+	}
+
+	verboseFlag := cmd.Flags().ShorthandLookup("v")
+	if verboseFlag == nil {
+		t.Error("expected shorthand 'v' for verbose flag")
 	}
 }
 
@@ -208,7 +201,7 @@ func TestNewConfigCommand_InitSubcommand(t *testing.T) {
 	t.Error("init subcommand not found")
 }
 
-// --- readImagesFromFile tests ---
+// --- readImagesFromFile tests (via pull command) ---
 
 func TestReadImagesFromFile(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -227,15 +220,15 @@ ubuntu:22.04
 		t.Fatalf("failed to write test file: %v", err)
 	}
 
-	// Test by running the batch command with parse only
-	cmd := cli.NewBatchCommand()
+	// Test by running the pull command with file flag
+	cmd := cli.NewPullCommand()
 	err = cmd.Flags().Set("file", filePath)
 	if err != nil {
 		t.Fatalf("failed to set file flag: %v", err)
 	}
 
 	// We can't directly call readImagesFromFile since it's unexported
-	// but we can verify the batch command accepts the flag
+	// but we can verify the pull command accepts the flag
 	fileFlag := cmd.Flags().Lookup("file")
 	if fileFlag == nil {
 		t.Fatal("file flag not found")
@@ -243,7 +236,7 @@ ubuntu:22.04
 }
 
 func TestReadImagesFromFile_Nonexistent(t *testing.T) {
-	cmd := cli.NewBatchCommand()
+	cmd := cli.NewPullCommand()
 	err := cmd.Flags().Set("file", "/nonexistent/file.txt")
 	if err != nil {
 		t.Fatalf("failed to set file flag: %v", err)
@@ -255,30 +248,14 @@ func TestReadImagesFromFile_Nonexistent(t *testing.T) {
 
 func TestCommandHierarchy(t *testing.T) {
 	// Verify all top-level commands can be created
-	commands := []struct {
-		name string
-		cmd  interface{ Use() string }
-	}{}
-	_ = commands
-
 	pullCmd := cli.NewPullCommand()
 	if pullCmd == nil {
 		t.Error("NewPullCommand returned nil")
 	}
 
-	batchCmd := cli.NewBatchCommand()
-	if batchCmd == nil {
-		t.Error("NewBatchCommand returned nil")
-	}
-
 	configCmd := cli.NewConfigCommand()
 	if configCmd == nil {
 		t.Error("NewConfigCommand returned nil")
-	}
-
-	cleanCmd := cli.NewCleanCommand()
-	if cleanCmd == nil {
-		t.Error("NewCleanCommand returned nil")
 	}
 }
 
@@ -287,35 +264,9 @@ func TestCommandHierarchy(t *testing.T) {
 func TestPullCommand_FlagParsing(t *testing.T) {
 	cmd := cli.NewPullCommand()
 
-	args := []string{"--arch", "arm64", "--os", "linux", "--multi-arch"}
+	args := []string{"--arch", "arm64", "--os", "linux", "--multi-arch", "-f", "images.txt", "-j", "5", "--force", "-v"}
 	err := cmd.Flags().Parse(args)
 	if err != nil {
 		t.Errorf("failed to parse flags: %v", err)
-	}
-}
-
-func TestBatchCommand_FlagParsing(t *testing.T) {
-	cmd := cli.NewBatchCommand()
-
-	args := []string{"-f", "images.txt", "-j", "5"}
-	err := cmd.Flags().Parse(args)
-	if err != nil {
-		t.Errorf("failed to parse flags: %v", err)
-	}
-}
-
-func TestCleanCommand_AllFlagsParsing(t *testing.T) {
-	listCmd := cli.NewCleanListCommand()
-	listArgs := []string{"--name", "nginx*", "--older-than", "24h", "--limit", "10", "--sort", "name", "--format", "json"}
-	err := listCmd.Flags().Parse(listArgs)
-	if err != nil {
-		t.Errorf("failed to parse list flags: %v", err)
-	}
-
-	deleteCmd := cli.NewCleanDeleteCommand()
-	deleteArgs := []string{"--name", "*alpine", "--older-than", "48h", "--limit", "5", "--dry-run", "--force"}
-	err = deleteCmd.Flags().Parse(deleteArgs)
-	if err != nil {
-		t.Errorf("failed to parse delete flags: %v", err)
 	}
 }

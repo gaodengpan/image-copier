@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
-	"github.com/example/image-copier/internal/config"
+	"github.com/gaodengpan/image-copier/internal/config"
 )
 
 func NewConfigCommand() *cobra.Command {
@@ -69,7 +70,7 @@ func newConfigInitCommand() *cobra.Command {
 		Short: "Create configuration file interactively",
 		Long:  `Create a configuration file through an interactive wizard`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			filename := "config.yaml"
+			filename := config.ConfigFilePath()
 
 			// Check if file exists
 			if _, err := os.Stat(filename); err == nil && !force {
@@ -81,6 +82,11 @@ func newConfigInitCommand() *cobra.Command {
 			data, err := RunWizard(ctx, skipExisting)
 			if err != nil {
 				return fmt.Errorf("wizard failed: %w", err)
+			}
+
+			// Ensure config directory exists
+			if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
+				return fmt.Errorf("failed to create config directory: %w", err)
 			}
 
 			// Write config file

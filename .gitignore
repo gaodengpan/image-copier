@@ -7,6 +7,13 @@ config.yaml
 # Logs
 *.log
 
+# GoReleaser
+dist/
+
+# Test artifacts
+coverage.out
+coverage.html
+
 # OS specific files
 .DS_Store
 Thumbs.db

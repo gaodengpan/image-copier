@@ -35,13 +35,26 @@ type Config struct {
 	LogLevel string `mapstructure:"log_level"`
 }
 
+// configDir returns the XDG-compliant configuration directory.
+func configDir() string {
+	if dir := os.Getenv("XDG_CONFIG_HOME"); dir != "" {
+		return filepath.Join(dir, "image-copier")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "image-copier")
+}
+
+// ConfigFilePath returns the full path to the config file.
+func ConfigFilePath() string {
+	return filepath.Join(configDir(), "config.yaml")
+}
+
 // Load loads configuration from file or environment variables
 func Load() (*Config, error) {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
+	viper.AddConfigPath(configDir())
 	viper.AddConfigPath(".")
-	viper.AddConfigPath("$HOME/.image-copier")
-	viper.AddConfigPath("/etc/image-copier")
 
 	// Set default values
 	viper.SetDefault("registry.arch", "amd64")
@@ -81,7 +94,8 @@ func Load() (*Config, error) {
 	return &cfg, nil
 }
 
-func validateConfig(cfg *Config) error {
+// ValidateConfig validates the configuration
+func ValidateConfig(cfg *Config) error {
 	if cfg.Github.Owner == "" {
 		return fmt.Errorf("github owner is required")
 	}
@@ -103,26 +117,15 @@ func validateConfig(cfg *Config) error {
 	return nil
 }
 
-// GetConfigPath returns the path to the config file
+func validateConfig(cfg *Config) error {
+	return ValidateConfig(cfg)
+}
+
+// GetConfigPath returns the path to the config file if it exists.
 func GetConfigPath() string {
-	// Check current directory first
-	if _, err := os.Stat("config.yaml"); err == nil {
-		return "config.yaml"
+	p := ConfigFilePath()
+	if _, err := os.Stat(p); err == nil {
+		return p
 	}
-
-	// Check home directory
-	homeDir, err := os.UserHomeDir()
-	if err == nil {
-		configPath := filepath.Join(homeDir, ".image-copier", "config.yaml")
-		if _, err := os.Stat(configPath); err == nil {
-			return configPath
-		}
-	}
-
-	// Check system-wide config
-	if _, err := os.Stat("/etc/image-copier/config.yaml"); err == nil {
-		return "/etc/image-copier/config.yaml"
-	}
-
 	return ""
 }

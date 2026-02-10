@@ -4,22 +4,38 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"net/http"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
 
-	"github.com/example/image-copier/pkg/retry"
+	"github.com/gaodengpan/image-copier/pkg/retry"
 	"github.com/sirupsen/logrus"
 )
 
+// PullStage represents a stage in the image pull pipeline.
+type PullStage int
+
+const (
+	StageCheckLocal    PullStage = iota // 检查本地镜像
+	StageCheckRegistry                  // 检查远端仓库
+	StageTriggerWorkflow                // 触发 GitHub Workflow
+	StageWaitWorkflow                   // 等待 Workflow 完成
+	StageCopyImage                      // skopeo copy (下载镜像)
+	StageLoadImage                      // docker load (导入本地)
+)
+
+// StageCallback is called when PullSingle transitions between stages.
+// polls is only meaningful for StageWaitWorkflow — it carries the current poll count.
+type StageCallback func(stage PullStage, polls int)
+
 // Puller handles the image pulling process
 type Puller struct {
-	Config      *Config
-	RetryConfig *retry.Config
-	Logger      *logrus.Logger
+	Config        *Config
+	RetryConfig   *retry.Config
+	Logger        *logrus.Logger
+	StageCallback StageCallback
 }
 
 // Config holds the configuration needed for Puller
@@ -34,6 +50,22 @@ type Config struct {
 	RegistryNamespace string
 	RegistryArch   string
 	RegistryOs     string
+	Force          bool
+}
+
+// ErrSkipped indicates an image was skipped because it already exists locally.
+var ErrSkipped = fmt.Errorf("image already exists locally")
+
+// CheckLocalImageExists checks whether the given image is available in the local Docker daemon.
+func (p *Puller) CheckLocalImageExists(imageID string) (bool, error) {
+	cmd := exec.Command("docker", "image", "inspect", imageID)
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	err := cmd.Run()
+	if err != nil {
+		return false, nil
+	}
+	return true, nil
 }
 
 // NewPuller creates a new Puller instance
@@ -45,6 +77,12 @@ func NewPuller(config *Config, logger *logrus.Logger) *Puller {
 	}
 }
 
+func (p *Puller) notifyStage(stage PullStage, polls int) {
+	if p.StageCallback != nil {
+		p.StageCallback(stage, polls)
+	}
+}
+
 // PullSingle pulls a single image through GitHub Actions
 func (p *Puller) PullSingle(ctx context.Context, imageID string) error {
 	p.Logger.Infof("Processing image: %s", imageID)
@@ -52,12 +90,20 @@ func (p *Puller) PullSingle(ctx context.Context, imageID string) error {
 	sourceID := p.normalizeSourceID(imageID)
 	destImageID := p.buildDestImageID(sourceID)
 
-	// Login to registry
-	if err := p.loginRegistry(); err != nil {
-		return fmt.Errorf("failed to login to registry: %w", err)
+	// Check if image already exists in the local Docker daemon
+	p.notifyStage(StageCheckLocal, 0)
+	if !p.Config.Force {
+		localExists, err := p.CheckLocalImageExists(sourceID)
+		if err != nil {
+			p.Logger.Warnf("Failed to check local image, continuing: %v", err)
+		} else if localExists {
+			p.Logger.Infof("Image %s already exists locally, skipping (use --force to override)", sourceID)
+			return ErrSkipped
+		}
 	}
 
 	// Check if image already exists
+	p.notifyStage(StageCheckRegistry, 0)
 	exists, err := p.checkImageExists(destImageID)
 	if err != nil {
 		return fmt.Errorf("failed to check if image exists: %w", err)
@@ -67,6 +113,7 @@ func (p *Puller) PullSingle(ctx context.Context, imageID string) error {
 		p.Logger.Info("Image not found in destination registry, triggering GitHub workflow")
 
 		// Trigger GitHub workflow
+		p.notifyStage(StageTriggerWorkflow, 0)
 		runID, err := p.triggerWorkflow(ctx, sourceID, destImageID)
 		if err != nil {
 			return fmt.Errorf("failed to trigger workflow: %w", err)
@@ -81,6 +128,7 @@ func (p *Puller) PullSingle(ctx context.Context, imageID string) error {
 	}
 
 	// Copy and import image
+	p.notifyStage(StageCopyImage, 0)
 	if err := p.copyAndImportImage(destImageID, sourceID); err != nil {
 		return fmt.Errorf("failed to copy and import image: %w", err)
 	}
@@ -91,22 +139,36 @@ func (p *Puller) PullSingle(ctx context.Context, imageID string) error {
 
 func (p *Puller) normalizeSourceID(imageID string) string {
 	segs := strings.Split(imageID, "/")
-	
+
+	var normalized string
 	switch len(segs) {
 	case 1:
 		// No registry specified, assume docker.io/library
-		return fmt.Sprintf("docker.io/library/%s", imageID)
+		normalized = fmt.Sprintf("docker.io/library/%s", imageID)
 	case 2:
 		// Check if first segment looks like a domain
 		if !strings.Contains(segs[0], ".") && !strings.Contains(segs[0], ":") {
 			// Not a domain, prepend docker.io
-			return fmt.Sprintf("docker.io/%s", imageID)
+			normalized = fmt.Sprintf("docker.io/%s", imageID)
+		} else {
+			normalized = imageID
 		}
-		return imageID
 	default:
 		// Already fully qualified
-		return imageID
+		normalized = imageID
 	}
+
+	// docker-daemon: transport requires a tag or digest; append :latest if missing.
+	lastSlash := strings.LastIndex(normalized, "/")
+	tail := normalized
+	if lastSlash >= 0 {
+		tail = normalized[lastSlash+1:]
+	}
+	if !strings.Contains(tail, ":") && !strings.Contains(tail, "@") {
+		normalized += ":latest"
+	}
+
+	return normalized
 }
 
 func (p *Puller) buildDestImageID(sourceID string) string {
@@ -121,18 +183,6 @@ func (p *Puller) buildDestImageID(sourceID string) string {
 	}
 	
 	return fmt.Sprintf("%s/%s/%s", p.Config.RegistryHost, p.Config.RegistryNamespace, normalized)
-}
-
-func (p *Puller) loginRegistry() error {
-	cmd := exec.Command("docker", "login", "-u", p.Config.RegistryUsername, "--password-stdin", p.Config.RegistryHost)
-	cmd.Stdin = strings.NewReader(p.Config.RegistryPassword)
-	
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("docker login failed: %s, output: %s", err, string(output))
-	}
-	
-	return nil
 }
 
 func (p *Puller) checkImageExists(destImageID string) (bool, error) {
@@ -293,7 +343,11 @@ func (p *Puller) waitForWorkflow(ctx context.Context, runID string) error {
 
 	p.Logger.Infof("Workflow run link: %s", link)
 
+	pollCount := 0
 	for {
+		pollCount++
+		p.notifyStage(StageWaitWorkflow, pollCount)
+
 		var run struct {
 			Status     string `json:"status"`
 			Conclusion string `json:"conclusion"`
@@ -361,23 +415,29 @@ func (p *Puller) waitForWorkflow(ctx context.Context, runID string) error {
 }
 
 func (p *Puller) copyAndImportImage(destImageID, sourceID string) error {
-	tmpFile := fmt.Sprintf("tmp-%d.tar", rand.Int())
-	defer os.Remove(tmpFile)
-	
+	tmpFile, err := os.CreateTemp("", "image-copier-*.tar")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	tmpFile.Close()
+	defer os.Remove(tmpPath)
+
 	creds := fmt.Sprintf("%s:%s", p.Config.RegistryUsername, p.Config.RegistryPassword)
-	cmd := exec.Command("skopeo", "copy", "--src-creds="+creds, 
-		"docker://"+destImageID, "docker-archive:"+tmpFile+":"+sourceID)
-	
+	cmd := exec.Command("skopeo", "copy", "--src-creds="+creds,
+		"docker://"+destImageID, "docker-archive:"+tmpPath+":"+sourceID)
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("skopeo copy failed: %s, output: %s", err, string(output))
 	}
-	
-	cmd = exec.Command("docker", "load", "-i", tmpFile)
+
+	p.notifyStage(StageLoadImage, 0)
+	cmd = exec.Command("docker", "load", "-i", tmpPath)
 	output, err = cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("docker load failed: %s, output: %s", err, string(output))
 	}
-	
+
 	return nil
 }

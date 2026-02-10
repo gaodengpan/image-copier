@@ -1,0 +1,44 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - main: ./cmd/image-copier
+    binary: image-copier
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/gaodengpan/image-copier/internal/version.Version={{.Version}}
+      - -X github.com/gaodengpan/image-copier/internal/version.Commit={{.Commit}}
+      - -X github.com/gaodengpan/image-copier/internal/version.Date={{.Date}}
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: 'checksums.txt'
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+
+release:
+  github:
+    owner: gaodengpan
+    name: image-copier
+  draft: false
+  prerelease: auto

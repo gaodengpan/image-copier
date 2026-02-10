@@ -256,9 +256,9 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/example/image-copier/internal/config"
-	"github.com/example/image-copier/internal/core"
-	"github.com/example/image-copier/pkg/progress"
+	"github.com/gaodengpan/image-copier/internal/config"
+	"github.com/gaodengpan/image-copier/internal/core"
+	"github.com/gaodengpan/image-copier/pkg/progress"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )

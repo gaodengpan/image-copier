@@ -1,13 +1,34 @@
 NAME=image-copier
-VERSION=0.1.0
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
+DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS  = -s -w \
+           -X github.com/gaodengpan/image-copier/internal/version.Version=$(VERSION) \
+           -X github.com/gaodengpan/image-copier/internal/version.Commit=$(COMMIT) \
+           -X github.com/gaodengpan/image-copier/internal/version.Date=$(DATE)
 
-.PHONY: build clean install uninstall help
+.PHONY: build clean install uninstall test test-coverage test-coverage-html help
 
 build: ## Build the binary
-	go build -o ${NAME} ./cmd/${NAME}
+	go build -ldflags "$(LDFLAGS)" -o ${NAME} ./cmd/${NAME}
+
+test: ## Run all tests
+	go test -v ./...
+
+test-coverage: ## Run tests with coverage report
+	go test -coverprofile=coverage.out ./...
+	go tool cover -func=coverage.out | grep total
+	@echo ""
+	@echo "Coverage report saved to coverage.out"
+
+test-coverage-html: ## Generate HTML coverage report
+	go test -coverprofile=coverage.out ./...
+	go tool cover -html=coverage.out -o coverage.html
+	@echo "HTML coverage report saved to coverage.html"
+	@echo "Open coverage.html in your browser to view the report"
 
 install: ## Install the binary to /usr/local/bin
-	go build -o ${NAME} ./cmd/${NAME}
+	go build -ldflags "$(LDFLAGS)" -o ${NAME} ./cmd/${NAME}
 	sudo mv ${NAME} /usr/local/bin/
 
 uninstall: ## Uninstall the binary from /usr/local/bin

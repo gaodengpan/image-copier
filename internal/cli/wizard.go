@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/example/image-copier/internal/config"
+	"github.com/gaodengpan/image-copier/internal/config"
 )
 
 // ConfigData holds the configuration from the wizard
@@ -61,7 +61,7 @@ func RunWizard(ctx context.Context, skipExisting bool) (*ConfigData, error) {
 		fmt.Println("\nDetected existing configuration. Press Enter to keep current value.")
 	}
 
-	fmt.Println("\n=== Image Copier Configuration Wizard ===\n")
+	fmt.Println("\n=== Image Copier Configuration Wizard ===")
 
 	// GitHub Configuration
 	fmt.Println("--- GitHub Configuration ---")
