@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -157,12 +158,26 @@ Supports two modes:
 
 // processImagesWithProgress processes images with a progress bar and worker pool.
 func processImagesWithProgress(logger *logrus.Logger, pullerCfg *core.Config, images []string, workerCount int, verbose bool, ctx context.Context) error {
-	// Validate worker count
+	// Validate and optimize worker count
 	if workerCount < 1 {
 		workerCount = 1
 	}
-	if workerCount > len(images) {
-		workerCount = len(images)
+
+	// Adjust worker count based on number of images and CPU cores
+	maxFromImages := len(images)
+	if maxFromImages == 0 {
+		maxFromImages = 1
+	}
+
+	if workerCount > maxFromImages {
+		workerCount = maxFromImages
+	}
+
+	// Limit worker count by CPU cores to prevent excessive resource usage
+	maxWorkersByCPU := runtime.NumCPU()
+	if workerCount > maxWorkersByCPU {
+		logger.Debugf("Reducing worker count from %d to %d based on CPU cores", workerCount, maxWorkersByCPU)
+		workerCount = maxWorkersByCPU
 	}
 
 	// Create progress manager with pre-allocated worker bars
@@ -366,12 +381,21 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *core.Config, tasks []syncT
 	}
 
 	// === Phase 2: Sync ===
+	// Optimize worker count for sync phase
 	if workerCount > len(needsSync) {
 		workerCount = len(needsSync)
 	}
 	if workerCount < 1 {
 		workerCount = 1
 	}
+
+	// Limit worker count by CPU cores to prevent excessive resource usage
+	maxWorkersByCPU := runtime.NumCPU()
+	if workerCount > maxWorkersByCPU {
+		logger.Debugf("Reducing sync worker count from %d to %d based on CPU cores", workerCount, maxWorkersByCPU)
+		workerCount = maxWorkersByCPU
+	}
+
 	p := progress.NewProgress(len(needsSync), workerCount)
 	for i, t := range needsSync {
 		p.AddImage(i, t.displayName())

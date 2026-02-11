@@ -7,23 +7,34 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gaodengpan/image-copier/pkg/retry"
 	"github.com/sirupsen/logrus"
 )
 
+// 定义常量
+const (
+	DefaultCacheTTL    = 30 * time.Second  // 默认缓存有效期
+	MaxCacheSizeDefault = 10000            // 默认最大缓存大小
+	DockerInspectCmd   = "docker"
+	SkopeoCmd          = "skopeo"
+	DockerImageFormat  = "{{.Repository}}:{{.Tag}}"
+)
+
 // PullStage represents a stage in the image pull pipeline.
 type PullStage int
 
 const (
-	StageCheckLocal    PullStage = iota // 检查本地镜像
-	StageCheckRegistry                  // 检查远端仓库
-	StageTriggerWorkflow                // 触发 GitHub Workflow
-	StageWaitWorkflow                   // 等待 Workflow 完成
-	StageCopyImage                      // skopeo copy (下载镜像)
-	StageLoadImage                      // docker load (导入本地)
+	StageCheckLocal    PullStage = iota // Check local image
+	StageCheckRegistry                  // Check remote registry
+	StageTriggerWorkflow                // Trigger GitHub Workflow
+	StageWaitWorkflow                   // Wait for Workflow completion
+	StageCopyImage                      // skopeo copy (download image)
+	StageLoadImage                      // docker load (import locally)
 )
 
 // StageCallback is called when PullSingle transitions between stages.
@@ -36,6 +47,11 @@ type Puller struct {
 	RetryConfig   *retry.Config
 	Logger        *logrus.Logger
 	StageCallback StageCallback
+	HTTPClient    *http.Client
+	LocalImageCache map[string]bool
+	CacheTimestamp time.Time
+	cacheMutex     sync.RWMutex
+	MaxCacheSize   int  // Maximum number of entries in the cache
 }
 
 // Config holds the configuration needed for Puller
@@ -61,16 +77,118 @@ var ErrSkipped = fmt.Errorf("image already exists locally")
 // ErrDryRun indicates no changes were made because dry-run mode is enabled.
 var ErrDryRun = fmt.Errorf("dry-run: no changes made")
 
+// isValidImageName validates an image name to prevent command injection
+func isValidImageName(name string) bool {
+	// Regular expression for valid Docker image names:
+	// - Alphanumeric characters, dots, hyphens, underscores
+	// - May include forward slashes for namespaces
+	// - May include colon for tags or @ for digests
+	// - No shell metacharacters like $, `, ", ', \, ;, &, |
+	// The pattern allows for multiple segments separated by slashes,
+	// followed by optional tag (after :) or digest (after @)
+	validImageRegex := regexp.MustCompile(`^[a-zA-Z0-9._-]+(/[a-zA-Z0-9._-]+)*(:[a-zA-Z0-9._-]+)?(@[a-zA-Z0-9._:-]+)?$|^([a-zA-Z0-9._-]+:[0-9]+/[a-zA-Z0-9._-]+(/[a-zA-Z0-9._-]+)*)(:[a-zA-Z0-9._-]+)?(@[a-zA-Z0-9._:-]+)?$`)
+
+	// Additional check to ensure no dangerous shell characters are present
+	noShellChars := !strings.ContainsAny(name, "$`\"'\\;&|()<>()[]{}")
+
+	return validImageRegex.MatchString(name) && noShellChars
+}
+
 // CheckLocalImageExists checks whether the given image is available in the local Docker daemon.
 func (p *Puller) CheckLocalImageExists(imageID string) (bool, error) {
-	cmd := exec.Command("docker", "image", "inspect", imageID)
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-	err := cmd.Run()
-	if err != nil {
-		return false, nil
+	// Validate input to prevent command injection
+	if !isValidImageName(imageID) {
+		return false, fmt.Errorf("invalid image name: %s", imageID)
 	}
-	return true, nil
+
+	// Check cache first
+	p.cacheMutex.RLock()
+	if cachedResult, exists := p.LocalImageCache[imageID]; exists {
+		// Check if cache is still valid (less than 30 seconds old)
+		if time.Since(p.CacheTimestamp) < DefaultCacheTTL {
+			p.cacheMutex.RUnlock()
+			return cachedResult, nil
+		}
+		p.cacheMutex.RUnlock()
+	} else {
+		p.cacheMutex.RUnlock()
+	}
+
+	// Need to refresh cache
+	return p.checkLocalImageWithCacheRefresh(imageID)
+}
+
+// checkLocalImageWithCacheRefresh performs the actual check and refreshes the cache if needed
+func (p *Puller) checkLocalImageWithCacheRefresh(imageID string) (bool, error) {
+	// Validate input to prevent command injection
+	if !isValidImageName(imageID) {
+		return false, fmt.Errorf("invalid image name: %s", imageID)
+	}
+
+	// Refresh entire cache if it's expired or too large
+	p.cacheMutex.Lock()
+	defer p.cacheMutex.Unlock()
+
+	// Double-check condition after acquiring write lock
+	needsRefresh := time.Since(p.CacheTimestamp) >= DefaultCacheTTL ||
+	               len(p.LocalImageCache) == 0 ||
+				   len(p.LocalImageCache) >= p.MaxCacheSize // Check if cache is too large
+
+	if needsRefresh {
+		// Refresh the entire cache
+		allImages, err := p.getAllLocalImages()
+		if err != nil {
+			// Fallback to individual check if unable to refresh cache
+			cmd := exec.Command(DockerInspectCmd, "image", "inspect", imageID)
+			cmd.Stdout = nil
+			cmd.Stderr = nil
+			err := cmd.Run()
+			if err != nil {
+				return false, nil
+			}
+			return true, nil
+		}
+
+		// Update the cache
+		p.LocalImageCache = allImages
+		p.CacheTimestamp = time.Now()
+	}
+
+	// Now check the cached result
+	exists := p.LocalImageCache[imageID]
+	return exists, nil
+}
+
+// CleanupCache removes the local image cache to free memory (useful for long-running operations)
+func (p *Puller) CleanupCache() {
+	p.cacheMutex.Lock()
+	defer p.cacheMutex.Unlock()
+
+	p.LocalImageCache = make(map[string]bool)
+	p.CacheTimestamp = time.Time{}
+}
+
+// getAllLocalImages gets all local images and returns them as a map for fast lookup
+func (p *Puller) getAllLocalImages() (map[string]bool, error) {
+	// Validate that we're not running this command with unsafe inputs
+	// Although we're not accepting user input here, this is a good safety check
+	cmd := exec.Command(DockerInspectCmd, "image", "ls", "--format", DockerImageFormat)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list local images: %w", err)
+	}
+
+	images := make(map[string]bool)
+	lines := strings.Split(string(output), "\n")
+	count := 0
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" && isValidImageName(line) && count < p.MaxCacheSize { // Only add valid image names to cache and respect size limit
+			images[line] = true
+			count++
+		}
+	}
+	return images, nil
 }
 
 // NewPuller creates a new Puller instance
@@ -79,10 +197,25 @@ func NewPuller(config *Config, logger *logrus.Logger) *Puller {
 	if rc == nil {
 		rc = retry.DefaultConfig()
 	}
+
+	httpClient := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 10,
+			IdleConnTimeout:     90 * time.Second,
+		},
+	}
+
 	return &Puller{
-		Config:      config,
-		RetryConfig: rc,
-		Logger:      logger,
+		Config:          config,
+		RetryConfig:     rc,
+		Logger:          logger,
+		HTTPClient:      httpClient,
+		LocalImageCache: make(map[string]bool),
+		CacheTimestamp:  time.Time{}, // Zero time initially
+		cacheMutex:      sync.RWMutex{},
+		MaxCacheSize:    MaxCacheSizeDefault, // Use default maximum cache size
 	}
 }
 
@@ -94,6 +227,11 @@ func (p *Puller) notifyStage(stage PullStage, polls int) {
 
 // PullSingle pulls a single image through GitHub Actions
 func (p *Puller) PullSingle(ctx context.Context, imageID string) error {
+	// Validate input to prevent command injection
+	if !isValidImageName(imageID) {
+		return fmt.Errorf("invalid image name: %s", imageID)
+	}
+
 	p.Logger.Infof("Processing image: %s", imageID)
 
 	sourceID := NormalizeSourceID(imageID)
@@ -209,8 +347,18 @@ func BuildDestImageID(registryHost, registryNamespace, sourceID string) string {
 
 // CheckImageExists checks if an image exists in a registry using skopeo.
 func CheckImageExists(destImageID, username, password string) (bool, error) {
+	// Validate inputs to prevent command injection
+	if !isValidImageName(destImageID) {
+		return false, fmt.Errorf("invalid destination image ID: %s", destImageID)
+	}
+
+	// Validate username and password to ensure they don't contain command injection chars
+	if strings.ContainsAny(username, "$`\"'\\;&|()") || strings.ContainsAny(password, "$`\"'\\;&|()") {
+		return false, fmt.Errorf("invalid credentials")
+	}
+
 	creds := fmt.Sprintf("%s:%s", username, password)
-	cmd := exec.Command("skopeo", "inspect", "--creds="+creds, "docker://"+destImageID)
+	cmd := exec.Command(SkopeoCmd, "inspect", "--creds="+creds, "docker://"+destImageID)
 
 	_, err := cmd.Output()
 	if err != nil {
@@ -255,8 +403,7 @@ func (p *Puller) triggerWorkflow(ctx context.Context, sourceID, destImageID stri
 		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 		req.Header.Set("Content-Type", "application/json")
 
-		client := &http.Client{}
-		resp, err := client.Do(req)
+		resp, err := p.HTTPClient.Do(req)
 		if err != nil {
 			return retry.NewRetryableError(fmt.Errorf("failed to send request: %w", err))
 		}
@@ -313,8 +460,7 @@ func (p *Puller) findWorkflowRunID(ctx context.Context, sourceID, destImageID, s
 			req.Header.Set("Authorization", "Bearer "+p.Config.GithubToken)
 			req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
-			client := &http.Client{}
-			resp, err := client.Do(req)
+			resp, err := p.HTTPClient.Do(req)
 			if err != nil {
 				// Network error, retry
 				p.Logger.Debugf("Network error, retrying: %v", err)
@@ -386,8 +532,7 @@ func (p *Puller) waitForWorkflow(ctx context.Context, runID string) error {
 			req.Header.Set("Authorization", "Bearer "+p.Config.GithubToken)
 			req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
-			client := &http.Client{}
-			resp, err := client.Do(req)
+			resp, err := p.HTTPClient.Do(req)
 			if err != nil {
 				return retry.NewRetryableError(fmt.Errorf("failed to send request: %w", err))
 			}
@@ -438,16 +583,41 @@ func (p *Puller) waitForWorkflow(ctx context.Context, runID string) error {
 }
 
 func (p *Puller) copyAndImportImage(destImageID, sourceID string) error {
+	// Validate inputs to prevent command injection
+	if !isValidImageName(destImageID) {
+		return fmt.Errorf("invalid destination image ID: %s", destImageID)
+	}
+	if !isValidImageName(sourceID) {
+		return fmt.Errorf("invalid source image ID: %s", sourceID)
+	}
+
+	// Validate tmpPath to ensure it's a valid temporary file path
 	tmpFile, err := os.CreateTemp("", "image-copier-*.tar")
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
 	tmpPath := tmpFile.Name()
 	tmpFile.Close()
-	defer os.Remove(tmpPath)
 
-	creds := fmt.Sprintf("%s:%s", p.Config.RegistryUsername, p.Config.RegistryPassword)
-	cmd := exec.Command("skopeo", "copy", "--src-creds="+creds,
+	// Register cleanup function
+	cleanup := func() {
+		if err := os.Remove(tmpPath); err != nil {
+			p.Logger.Warnf("Failed to remove temp file %s: %v", tmpPath, err)
+		}
+	}
+
+	// Ensure cleanup happens even if function exits early
+	defer cleanup()
+
+	// Validate credentials to prevent command injection
+	username := p.Config.RegistryUsername
+	password := p.Config.RegistryPassword
+	if strings.ContainsAny(username, "$`\"'\\;&|()") || strings.ContainsAny(password, "$`\"'\\;&|()") {
+		return fmt.Errorf("invalid credentials")
+	}
+
+	creds := fmt.Sprintf("%s:%s", username, password)
+	cmd := exec.Command(SkopeoCmd, "copy", "--src-creds="+creds,
 		"docker://"+destImageID, "docker-archive:"+tmpPath+":"+sourceID)
 
 	output, err := cmd.CombinedOutput()
@@ -456,7 +626,7 @@ func (p *Puller) copyAndImportImage(destImageID, sourceID string) error {
 	}
 
 	p.notifyStage(StageLoadImage, 0)
-	cmd = exec.Command("docker", "load", "-i", tmpPath)
+	cmd = exec.Command(DockerInspectCmd, "load", "-i", tmpPath)
 	output, err = cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("docker load failed: %s, output: %s", err, string(output))

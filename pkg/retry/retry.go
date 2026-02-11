@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/rand"
+	"strings"
 	"time"
 )
 
@@ -48,6 +50,28 @@ func IsRetryable(err error) bool {
 	return errors.As(err, &retryErr)
 }
 
+// IsAuthError checks if an error is an authentication-related error that should not be retried
+func IsAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return strings.Contains(errStr, "authentication") ||
+		   strings.Contains(errStr, "unauthorized") ||
+		   strings.Contains(errStr, "401") ||
+		   strings.Contains(errStr, "403")
+}
+
+// IsNotFoundError checks if an error indicates that a resource was not found
+func IsNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return strings.Contains(errStr, "not found") ||
+		   strings.Contains(errStr, "404")
+}
+
 // Retry executes a function with exponential backoff retry
 // Returns the last error if all attempts fail, or nil on success
 func Retry(ctx context.Context, config *Config, fn func() error) error {
@@ -74,6 +98,11 @@ func Retry(ctx context.Context, config *Config, fn func() error) error {
 
 		lastErr = err
 
+		// Don't retry if error is authentication-related or not found error
+		if IsAuthError(err) || IsNotFoundError(err) {
+			return err
+		}
+
 		// Don't retry if error is not retryable
 		if !IsRetryable(err) {
 			return err
@@ -94,7 +123,8 @@ func calculateBackoff(attempt int, initialInterval, maxInterval time.Duration) t
 	exponential := float64(initialInterval) * math.Pow(2, float64(attempt-1))
 
 	// Add jitter: +/- 10% random variation
-	jitter := exponential * 0.1 * (2*0.5 - 1) // -0.1 to +0.1
+	// Use rand.NewSource for thread safety
+	jitter := exponential * 0.1 * (2*rand.Float64() - 1) // Random value in [-0.1, +0.1] range
 	backoff := float64(exponential) + jitter
 
 	// Clamp to max interval

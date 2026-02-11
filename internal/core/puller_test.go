@@ -349,3 +349,50 @@ func TestConfig_Fields(t *testing.T) {
 		t.Error("RegistryOs mismatch")
 	}
 }
+
+// --- Security tests ---
+
+func TestIsValidImageName_ValidInputs(t *testing.T) {
+	validNames := []string{
+		"nginx",
+		"nginx:latest",
+		"nginx:1.21",
+		"my.registry.com/image:tag",
+		"namespace/image:tag",
+		"namespace/subnamespace/image:tag",
+		"image@sha256:abc123def456",
+		"my_image_v1.0:latest",
+		"my.repo.com:5000/my-image:v1.0",
+	}
+
+	for _, name := range validNames {
+		t.Run(name, func(t *testing.T) {
+			if !isValidImageName(name) {
+				t.Errorf("Expected '%s' to be valid, but it was rejected", name)
+			}
+		})
+	}
+}
+
+func TestIsValidImageName_InvalidInputs(t *testing.T) {
+	invalidNames := []string{
+		"nginx;rm -rf /",         // semicolon injection
+		"nginx && echo hi",       // AND injection
+		"nginx || exit 1",        // OR injection
+		"nginx `whoami`",         // command substitution
+		"$(malicious_command)",   // command substitution
+		"image\" malicious",       // quote injection
+		"image' malicious",       // single quote injection
+		"image\\ malicious",      // backslash in unexpected place
+		"image\nmalicious",       // newline injection
+		"image\r\nmalicious",     // CRLF injection
+	}
+
+	for _, name := range invalidNames {
+		t.Run(name, func(t *testing.T) {
+			if isValidImageName(name) {
+				t.Errorf("Expected '%s' to be invalid, but it was accepted", name)
+			}
+		})
+	}
+}
