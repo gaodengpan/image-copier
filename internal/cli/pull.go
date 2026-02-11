@@ -330,10 +330,14 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *core.Config, tasks []syncT
 	fmt.Printf("Checking %d image(s) against destination registry...\n", len(tasks))
 
 	type diffResult struct {
-		task   syncTask
-		exists bool
+		task        syncTask
+		remoteExists bool
+		localExists  bool
 	}
 	results := make([]diffResult, len(tasks))
+
+	// Create a temporary puller for local image checks
+	localChecker := core.NewPuller(baseCfg, logger)
 
 	// Concurrent check (bounded by workerCount)
 	sem := make(chan struct{}, workerCount)
@@ -347,16 +351,18 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *core.Config, tasks []syncT
 
 			sourceID := core.NormalizeSourceID(task.Source)
 			destID := core.BuildDestImageID(baseCfg.RegistryHost, baseCfg.RegistryNamespace, sourceID)
-			exists, _ := core.CheckImageExists(destID, baseCfg.RegistryUsername, baseCfg.RegistryPassword)
-			results[idx] = diffResult{task: task, exists: exists}
+			remoteExists, _ := core.CheckImageExists(destID, baseCfg.RegistryUsername, baseCfg.RegistryPassword)
+			localExists, _ := localChecker.CheckLocalImageExists(sourceID)
+			results[idx] = diffResult{task: task, remoteExists: remoteExists, localExists: localExists}
 		}(i, t)
 	}
 	wg.Wait()
 
 	// Partition: synced vs needsSync
+	// An image is fully synced only when it exists in BOTH the remote registry AND locally
 	var synced, needsSync []syncTask
 	for _, r := range results {
-		if r.exists && !force {
+		if r.remoteExists && r.localExists && !force {
 			synced = append(synced, r.task)
 		} else {
 			needsSync = append(needsSync, r.task)
@@ -369,8 +375,15 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *core.Config, tasks []syncT
 		for _, t := range synced {
 			fmt.Printf("  ✓ %s (synced)\n", t.displayName())
 		}
-		for _, t := range needsSync {
-			fmt.Printf("  → %s (will sync)\n", t.displayName())
+		for _, r := range results {
+			if r.remoteExists && r.localExists && !force {
+				continue
+			}
+			if r.remoteExists && !r.localExists {
+				fmt.Printf("  → %s (in registry, will download to local)\n", r.task.displayName())
+			} else {
+				fmt.Printf("  → %s (will sync)\n", r.task.displayName())
+			}
 		}
 		return nil
 	}
