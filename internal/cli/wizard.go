@@ -27,13 +27,13 @@ type ConfigData struct {
 }
 
 // RunWizard runs the interactive configuration wizard
-func RunWizard(ctx context.Context, skipExisting bool) (*ConfigData, error) {
+func RunWizard(ctx context.Context, skipExisting bool, provider config.ConfigProvider) (*ConfigData, error) {
 	reader := bufio.NewReader(os.Stdin)
 
 	// Try to load existing config to provide defaults
 	var existing *config.Config
 	if skipExisting {
-		if cfg, err := config.Load(); err == nil {
+		if cfg, err := provider.Load(); err == nil {
 			existing = cfg
 		}
 	}

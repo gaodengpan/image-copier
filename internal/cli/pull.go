@@ -2,15 +2,11 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"os"
 	"runtime"
 	"strings"
 	"sync"
-	"sync/atomic"
-	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -22,34 +18,35 @@ import (
 	"github.com/gaodengpan/image-copier/pkg/progress"
 )
 
-// stageWeights defines the cumulative percentage weight for each pull stage.
-var stageWeights = [6]float64{5, 15, 20, 80, 95, 100}
-
-var stageNames = [6]string{
-	"checking local",
-	"checking registry",
-	"triggering workflow",
-	"workflow running",
-	"downloading",
-	"loading",
+// PullCommandOptions defines options for the pull command
+type PullCommandOptions struct {
+	Arch        string
+	OsType      string
+	FilePath    string
+	WorkerCount int
+	Force       bool
+	DryRun      bool
+	Verbose     bool
 }
 
-// asymptotic computes progress that slows as it approaches the ceiling.
-// Formula: base + range * (1 - 1/(1 + k*polls))
-func asymptotic(base, rangeSize float64, polls int) float64 {
-	const k = 0.05
-	return base + rangeSize*(1-1/(1+k*float64(polls)))
+
+// NewPullCommandWithConfigProvider creates a new pull command that accepts a ConfigProvider
+func NewPullCommandWithConfigProvider(configProvider config.ConfigProvider) *cobra.Command {
+	return NewPullCommandWithConfigProviderAndOptions(configProvider, PullCommandOptions{
+		WorkerCount: 3,
+	})
 }
 
-func NewPullCommand() *cobra.Command {
+// NewPullCommandWithConfigProviderAndOptions creates a new pull command with a ConfigProvider and specified options
+func NewPullCommandWithConfigProviderAndOptions(configProvider config.ConfigProvider, opts PullCommandOptions) *cobra.Command {
 	var (
-		arch        string
-		osType      string
-		filePath    string
-		workerCount int
-		force       bool
-		dryRun      bool
-		verbose     bool
+		arch        = opts.Arch
+		osType      = opts.OsType
+		filePath    = opts.FilePath
+		workerCount = opts.WorkerCount
+		force       = opts.Force
+		dryRun      = opts.DryRun
+		verbose     = opts.Verbose
 	)
 
 	cmd := &cobra.Command{
@@ -68,7 +65,7 @@ Supports two modes:
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
+			cfg, err := configProvider.Load()
 			if err != nil {
 				return fmt.Errorf("failed to load config: %w", err)
 			}
@@ -101,36 +98,19 @@ Supports two modes:
 					fmt.Println("No images found in manifest.")
 					return nil
 				}
-				baseCfg := &core.Config{
-					GithubOwner:      cfg.Github.Owner,
-					GithubRepo:       cfg.Github.Repo,
-					GithubToken:      cfg.Github.Token,
-					GithubWorkflowID: cfg.Github.WorkflowID,
-					RegistryHost:     cfg.Registry.Host,
-					RegistryUsername:  cfg.Registry.Username,
-					RegistryPassword:  cfg.Registry.Password,
-					RegistryNamespace: cfg.Registry.Namespace,
-					RetryConfig:      cfg.ParseRetryConfig(),
-				}
+				baseCfg := CreateCoreConfigFromConfig(cfg, force, dryRun)
 				ctx := context.Background()
 				return processSyncTasks(logger, baseCfg, tasks, workerCount, force, dryRun, verbose, ctx)
 			}
 
 			// === 命令式模式（CLI 参数）===
-			pullerCfg := &core.Config{
-				GithubOwner:      cfg.Github.Owner,
-				GithubRepo:       cfg.Github.Repo,
-				GithubToken:      cfg.Github.Token,
-				GithubWorkflowID: cfg.Github.WorkflowID,
-				RegistryHost:     cfg.Registry.Host,
-				RegistryUsername:  cfg.Registry.Username,
-				RegistryPassword:  cfg.Registry.Password,
-				RegistryNamespace: cfg.Registry.Namespace,
-				RegistryArch:     arch,
-				RegistryOs:       osType,
-				Force:            force,
-				RetryConfig:      cfg.ParseRetryConfig(),
-				DryRun:           dryRun,
+			pullerCfg := CreateCoreConfigFromConfig(cfg, force, dryRun)
+			// Override the arch and os with CLI flag values if they were specified
+			if arch != "" {
+				pullerCfg.RegistryArch = arch
+			}
+			if osType != "" {
+				pullerCfg.RegistryOs = osType
 			}
 
 			images := args
@@ -186,83 +166,25 @@ func processImagesWithProgress(logger *logrus.Logger, pullerCfg *core.Config, im
 		p.AddImage(i, img)
 	}
 
-	// Route logger output based on verbose flag
-	if verbose {
-		logger.SetOutput(p.LogWriter())
-	} else {
-		logger.SetOutput(io.Discard)
-	}
-	defer logger.SetOutput(os.Stderr)
-
-	// Create worker pool
-	jobs := make(chan int, len(images))
-	for i := range images {
-		jobs <- i
-	}
-	close(jobs)
-
-	var wg sync.WaitGroup
-	var failCount atomic.Int32
-
-	// Start workers — each worker owns a fixed worker bar
-	for i := 0; i < workerCount; i++ {
-		workerIdx := i
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for idx := range jobs {
-				p.UpdateStatus(idx, progress.StatusRunning, nil)
-				startTime := time.Now()
-
-				puller := core.NewPuller(pullerCfg, logger)
-				puller.StageCallback = func(stage core.PullStage, polls int) {
-					var pct float64
-					stageIdx := int(stage)
-
-					if stage == core.StageWaitWorkflow && polls > 0 {
-						base := stageWeights[2]
-						ceiling := stageWeights[3]
-						pct = asymptotic(base, ceiling-base, polls)
-					} else if stageIdx > 0 {
-						pct = stageWeights[stageIdx-1]
-					}
-
-					p.UpdateStage(workerIdx, progress.StageInfo{
-						Label:     images[idx],
-						StageName: stageNames[stageIdx],
-						Percent:   pct,
-						StartAt:   startTime,
-					})
-				}
-
-				err := puller.PullSingle(ctx, images[idx])
-				elapsed := time.Since(startTime)
-
-				if err != nil {
-					if errors.Is(err, core.ErrSkipped) {
-						p.UpdateStatus(idx, progress.StatusSkipped, nil)
-					} else if errors.Is(err, core.ErrDryRun) {
-						p.UpdateStatus(idx, progress.StatusDryRun, nil)
-					} else {
-						p.UpdateStatus(idx, progress.StatusFailed, err)
-						failCount.Add(1)
-					}
-				} else {
-					p.UpdateStatus(idx, progress.StatusCompleted, nil)
-				}
-				p.SetDuration(idx, elapsed)
-
-				p.UpdateWorker(workerIdx, "")
-				p.Increment()
-			}
-		}()
+	// Create tasks
+	tasks := make([]WorkerPoolTask[CLIImage], len(images))
+	for i, img := range images {
+		tasks[i] = WorkerPoolTask[CLIImage]{
+			Index:  i,
+			Item:   CLIImage{ImageID: img},
+			Config: pullerCfg,
+		}
 	}
 
-	wg.Wait()
-	p.Wait()
+	// Create processor
+	processor := &CLIImagesProcessor{
+		logger: logger,
+	}
 
-	if failCount.Load() > 0 {
-		return fmt.Errorf("%d image(s) failed", failCount.Load())
+	// Execute with generic worker pool
+	failCount, err := GenericWorkerPool(logger, tasks, processor, p, workerCount, verbose, ctx)
+	if err != nil {
+		return fmt.Errorf("%d image(s) failed", failCount)
 	}
 	return nil
 }
@@ -351,8 +273,8 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *core.Config, tasks []syncT
 
 			sourceID := core.NormalizeSourceID(task.Source)
 			destID := core.BuildDestImageID(baseCfg.RegistryHost, baseCfg.RegistryNamespace, sourceID)
-			remoteExists, _ := core.CheckImageExists(destID, baseCfg.RegistryUsername, baseCfg.RegistryPassword)
-			localExists, _ := localChecker.CheckLocalImageExists(sourceID)
+			remoteExists, _ := core.CheckImageExists(ctx, destID, baseCfg.RegistryUsername, baseCfg.RegistryPassword)
+			localExists, _ := localChecker.CheckLocalImageExists(ctx, sourceID)
 			results[idx] = diffResult{task: task, remoteExists: remoteExists, localExists: localExists}
 		}(i, t)
 	}
@@ -414,84 +336,30 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *core.Config, tasks []syncT
 		p.AddImage(i, t.displayName())
 	}
 
-	if verbose {
-		logger.SetOutput(p.LogWriter())
-	} else {
-		logger.SetOutput(io.Discard)
-	}
-	defer logger.SetOutput(os.Stderr)
-
-	jobs := make(chan int, len(needsSync))
-	for i := range needsSync {
-		jobs <- i
-	}
-	close(jobs)
-
-	var syncWg sync.WaitGroup
-	var failCount atomic.Int32
-
-	for i := 0; i < workerCount; i++ {
-		workerIdx := i
-		syncWg.Add(1)
-		go func() {
-			defer syncWg.Done()
-			for idx := range jobs {
-				task := needsSync[idx]
-				p.UpdateStatus(idx, progress.StatusRunning, nil)
-				startTime := time.Now()
-
-				// Create per-task Config with specific arch/os
-				taskCfg := *baseCfg
-				taskCfg.RegistryArch = task.Arch
-				taskCfg.RegistryOs = task.Os
-				taskCfg.Force = true // diff already confirmed sync needed
-
-				puller := core.NewPuller(&taskCfg, logger)
-				puller.StageCallback = func(stage core.PullStage, polls int) {
-					var pct float64
-					stageIdx := int(stage)
-
-					if stage == core.StageWaitWorkflow && polls > 0 {
-						base := stageWeights[2]
-						ceiling := stageWeights[3]
-						pct = asymptotic(base, ceiling-base, polls)
-					} else if stageIdx > 0 {
-						pct = stageWeights[stageIdx-1]
-					}
-
-					p.UpdateStage(workerIdx, progress.StageInfo{
-						Label:     task.displayName(),
-						StageName: stageNames[stageIdx],
-						Percent:   pct,
-						StartAt:   startTime,
-					})
-				}
-
-				err := puller.PullSingle(ctx, task.Source)
-				elapsed := time.Since(startTime)
-
-				if err != nil {
-					if errors.Is(err, core.ErrSkipped) {
-						p.UpdateStatus(idx, progress.StatusSkipped, nil)
-					} else {
-						p.UpdateStatus(idx, progress.StatusFailed, err)
-						failCount.Add(1)
-					}
-				} else {
-					p.UpdateStatus(idx, progress.StatusCompleted, nil)
-				}
-				p.SetDuration(idx, elapsed)
-				p.UpdateWorker(workerIdx, "")
-				p.Increment()
-			}
-		}()
+	// Create tasks for the worker pool
+	syncTasks := make([]WorkerPoolTask[SyncTask], len(needsSync))
+	for i, t := range needsSync {
+		syncTasks[i] = WorkerPoolTask[SyncTask]{
+			Index: i,
+			Item: SyncTask{
+				Source: t.Source,
+				Arch:   t.Arch,
+				Os:     t.Os,
+			},
+			Config: baseCfg,
+		}
 	}
 
-	syncWg.Wait()
-	p.Wait()
+	// Create processor
+	processor := &SyncTasksProcessor{
+		logger: logger,
+		force:  true, // diff already confirmed sync needed
+	}
 
-	if failCount.Load() > 0 {
-		return fmt.Errorf("%d image(s) failed to sync", failCount.Load())
+	// Execute with generic worker pool
+	failCount, err := GenericWorkerPool(logger, syncTasks, processor, p, workerCount, verbose, ctx)
+	if err != nil {
+		return fmt.Errorf("%d image(s) failed to sync", failCount)
 	}
 	return nil
 }

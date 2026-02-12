@@ -12,32 +12,41 @@ import (
 )
 
 func NewConfigCommand() *cobra.Command {
+	return NewConfigCommandWithConfigProvider(config.DefaultConfigProvider())
+}
+
+func NewConfigCommandWithConfigProvider(provider config.ConfigProvider) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Manage configuration",
 		Long:  `View and manage image-copier configuration`,
 	}
 
-	cmd.AddCommand(newConfigShowCommand())
-	cmd.AddCommand(newConfigInitCommand())
+	cmd.AddCommand(newConfigShowCommandWithProvider(provider))
+	cmd.AddCommand(newConfigInitCommand(provider))
 
 	return cmd
 }
 
-func newConfigShowCommand() *cobra.Command {
+func newConfigShowCommandWithProvider(provider config.ConfigProvider) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show",
 		Short: "Show current configuration",
 		Long:  `Display the current configuration being used`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path := config.GetConfigPath()
-			if path != "" {
-				fmt.Printf("Using config file: %s\n\n", path)
+			// Only try to get config path if provider supports it
+			if vcp, ok := provider.(*config.ViperConfigProvider); ok {
+				path := vcp.GetConfigPath()
+				if path != "" {
+					fmt.Printf("Using config file: %s\n\n", path)
+				} else {
+					fmt.Println("No config file found, using environment variables only")
+				}
 			} else {
-				fmt.Println("No config file found, using environment variables only")
+				fmt.Println("Using provided configuration (no file path available)")
 			}
 
-			cfg, err := config.Load()
+			cfg, err := provider.Load()
 			if err != nil {
 				return fmt.Errorf("failed to load config: %w", err)
 			}
@@ -59,7 +68,7 @@ func newConfigShowCommand() *cobra.Command {
 	return cmd
 }
 
-func newConfigInitCommand() *cobra.Command {
+func newConfigInitCommand(provider config.ConfigProvider) *cobra.Command {
 	var (
 		skipExisting bool
 		force        bool
@@ -79,7 +88,7 @@ func newConfigInitCommand() *cobra.Command {
 
 			// Run wizard
 			ctx := context.Background()
-			data, err := RunWizard(ctx, skipExisting)
+			data, err := RunWizard(ctx, skipExisting, provider)
 			if err != nil {
 				return fmt.Errorf("wizard failed: %w", err)
 			}

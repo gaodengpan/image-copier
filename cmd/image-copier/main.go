@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/gaodengpan/image-copier/internal/cli"
+	"github.com/gaodengpan/image-copier/internal/config"
 	"github.com/gaodengpan/image-copier/internal/version"
 )
 
@@ -21,8 +22,11 @@ through GitHub Actions when direct pulling is not possible due to network restri
 	rootCmd.SetVersionTemplate(fmt.Sprintf("image-copier %s (commit: %s, built: %s)\n",
 		version.Version, version.Commit, version.Date))
 
-	rootCmd.AddCommand(cli.NewPullCommand())
-	rootCmd.AddCommand(cli.NewConfigCommand())
+	// Use default config provider for standard execution
+	configProvider := config.DefaultConfigProvider()
+
+	rootCmd.AddCommand(cli.NewPullCommandWithConfigProvider(configProvider))
+	rootCmd.AddCommand(cli.NewConfigCommandWithConfigProvider(configProvider))
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)

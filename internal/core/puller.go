@@ -95,7 +95,7 @@ func isValidImageName(name string) bool {
 }
 
 // CheckLocalImageExists checks whether the given image is available in the local Docker daemon.
-func (p *Puller) CheckLocalImageExists(imageID string) (bool, error) {
+func (p *Puller) CheckLocalImageExists(ctx context.Context, imageID string) (bool, error) {
 	// Validate input to prevent command injection
 	if !isValidImageName(imageID) {
 		return false, fmt.Errorf("invalid image name: %s", imageID)
@@ -115,11 +115,11 @@ func (p *Puller) CheckLocalImageExists(imageID string) (bool, error) {
 	}
 
 	// Need to refresh cache
-	return p.checkLocalImageWithCacheRefresh(imageID)
+	return p.checkLocalImageWithCacheRefresh(ctx, imageID)
 }
 
 // checkLocalImageWithCacheRefresh performs the actual check and refreshes the cache if needed
-func (p *Puller) checkLocalImageWithCacheRefresh(imageID string) (bool, error) {
+func (p *Puller) checkLocalImageWithCacheRefresh(ctx context.Context, imageID string) (bool, error) {
 	// Validate input to prevent command injection
 	if !isValidImageName(imageID) {
 		return false, fmt.Errorf("invalid image name: %s", imageID)
@@ -136,10 +136,14 @@ func (p *Puller) checkLocalImageWithCacheRefresh(imageID string) (bool, error) {
 
 	if needsRefresh {
 		// Refresh the entire cache
-		allImages, err := p.getAllLocalImages()
+		allImages, err := p.getAllLocalImages(ctx)
 		if err != nil {
 			// Fallback to individual check if unable to refresh cache
-			cmd := exec.Command(DockerInspectCmd, "image", "inspect", imageID)
+			// Use context with timeout to prevent hanging
+			ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+
+			cmd := exec.CommandContext(ctx, DockerInspectCmd, "image", "inspect", imageID)
 			cmd.Stdout = nil
 			cmd.Stderr = nil
 			err := cmd.Run()
@@ -169,10 +173,13 @@ func (p *Puller) CleanupCache() {
 }
 
 // getAllLocalImages gets all local images and returns them as a map for fast lookup
-func (p *Puller) getAllLocalImages() (map[string]bool, error) {
+func (p *Puller) getAllLocalImages(ctx context.Context) (map[string]bool, error) {
 	// Validate that we're not running this command with unsafe inputs
 	// Although we're not accepting user input here, this is a good safety check
-	cmd := exec.Command(DockerInspectCmd, "image", "ls", "--format", DockerImageFormat)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, DockerInspectCmd, "image", "ls", "--format", DockerImageFormat)
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list local images: %w", err)
@@ -240,7 +247,7 @@ func (p *Puller) PullSingle(ctx context.Context, imageID string) error {
 	// Check if image already exists in the local Docker daemon
 	p.notifyStage(StageCheckLocal, 0)
 	if !p.Config.Force {
-		localExists, err := p.CheckLocalImageExists(sourceID)
+		localExists, err := p.CheckLocalImageExists(ctx, sourceID)
 		if err != nil {
 			p.Logger.Warnf("Failed to check local image, continuing: %v", err)
 		} else if localExists {
@@ -251,7 +258,7 @@ func (p *Puller) PullSingle(ctx context.Context, imageID string) error {
 
 	// Check if image already exists
 	p.notifyStage(StageCheckRegistry, 0)
-	exists, err := CheckImageExists(destImageID, p.Config.RegistryUsername, p.Config.RegistryPassword)
+	exists, err := CheckImageExists(ctx, destImageID, p.Config.RegistryUsername, p.Config.RegistryPassword)
 	if err != nil {
 		return fmt.Errorf("failed to check if image exists: %w", err)
 	}
@@ -285,7 +292,7 @@ func (p *Puller) PullSingle(ctx context.Context, imageID string) error {
 
 	// Copy and import image
 	p.notifyStage(StageCopyImage, 0)
-	if err := p.copyAndImportImage(destImageID, sourceID); err != nil {
+	if err := p.copyAndImportImage(ctx, destImageID, sourceID); err != nil {
 		return fmt.Errorf("failed to copy and import image: %w", err)
 	}
 
@@ -346,7 +353,7 @@ func BuildDestImageID(registryHost, registryNamespace, sourceID string) string {
 }
 
 // CheckImageExists checks if an image exists in a registry using skopeo.
-func CheckImageExists(destImageID, username, password string) (bool, error) {
+func CheckImageExists(ctx context.Context, destImageID, username, password string) (bool, error) {
 	// Validate inputs to prevent command injection
 	if !isValidImageName(destImageID) {
 		return false, fmt.Errorf("invalid destination image ID: %s", destImageID)
@@ -358,11 +365,16 @@ func CheckImageExists(destImageID, username, password string) (bool, error) {
 	}
 
 	creds := fmt.Sprintf("%s:%s", username, password)
-	cmd := exec.Command(SkopeoCmd, "inspect", "--creds="+creds, "docker://"+destImageID)
+
+	// Create context with timeout to prevent indefinite hanging
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, SkopeoCmd, "inspect", "--creds="+creds, "docker://"+destImageID)
 
 	_, err := cmd.Output()
 	if err != nil {
-		// If command fails, assume image doesn't exist
+		// If command fails or times out, assume image doesn't exist
 		return false, nil
 	}
 
@@ -582,7 +594,7 @@ func (p *Puller) waitForWorkflow(ctx context.Context, runID string) error {
 	}
 }
 
-func (p *Puller) copyAndImportImage(destImageID, sourceID string) error {
+func (p *Puller) copyAndImportImage(ctx context.Context, destImageID, sourceID string) error {
 	// Validate inputs to prevent command injection
 	if !isValidImageName(destImageID) {
 		return fmt.Errorf("invalid destination image ID: %s", destImageID)
@@ -617,7 +629,12 @@ func (p *Puller) copyAndImportImage(destImageID, sourceID string) error {
 	}
 
 	creds := fmt.Sprintf("%s:%s", username, password)
-	cmd := exec.Command(SkopeoCmd, "copy", "--src-creds="+creds,
+
+	// Create context with timeout to prevent indefinite hanging
+	skopeoCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(skopeoCtx, SkopeoCmd, "copy", "--src-creds="+creds,
 		"docker://"+destImageID, "docker-archive:"+tmpPath+":"+sourceID)
 
 	output, err := cmd.CombinedOutput()
@@ -626,7 +643,12 @@ func (p *Puller) copyAndImportImage(destImageID, sourceID string) error {
 	}
 
 	p.notifyStage(StageLoadImage, 0)
-	cmd = exec.Command(DockerInspectCmd, "load", "-i", tmpPath)
+
+	// Create a new context for docker load
+	loadCtx, loadCancel := context.WithTimeout(ctx, 60*time.Second)
+	defer loadCancel()
+
+	cmd = exec.CommandContext(loadCtx, DockerInspectCmd, "load", "-i", tmpPath)
 	output, err = cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("docker load failed: %s, output: %s", err, string(output))

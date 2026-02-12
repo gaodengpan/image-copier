@@ -13,34 +13,19 @@ import (
 
 // TestValidateConfig_Success tests successful config validation
 func TestValidateConfig_Success(t *testing.T) {
-	// Save and restore environment
-	envVars := map[string]string{
-		"GITHUB_OWNER":       os.Getenv("GITHUB_OWNER"),
-		"GITHUB_REPO":        os.Getenv("GITHUB_REPO"),
-		"GITHUB_TOKEN":       os.Getenv("GITHUB_TOKEN"),
-		"REGISTRY_HOST":      os.Getenv("REGISTRY_HOST"),
-		"REGISTRY_USERNAME":  os.Getenv("REGISTRY_USERNAME"),
-		"REGISTRY_PASSWD":    os.Getenv("REGISTRY_PASSWD"),
-	}
-	defer func() {
-		for k, v := range envVars {
-			if v == "" {
-				os.Unsetenv(k)
-			} else {
-				os.Setenv(k, v)
-			}
-		}
-	}()
+	// Create a new environment sandbox for this test
+	envSandbox := config.NewEnvSandbox()
+	defer envSandbox.Restore()
 
-	// Set environment variables
-	os.Setenv("GITHUB_OWNER", "test-owner")
-	os.Setenv("GITHUB_REPO", "test-repo")
-	os.Setenv("GITHUB_TOKEN", "test-token")
-	os.Setenv("REGISTRY_HOST", "registry.example.com")
-	os.Setenv("REGISTRY_USERNAME", "test-user")
-	os.Setenv("REGISTRY_PASSWD", "test-pass")
+	// Set environment variables using the sandbox
+	envSandbox.SetEnv("GITHUB_OWNER", "test-owner")
+	envSandbox.SetEnv("GITHUB_REPO", "test-repo")
+	envSandbox.SetEnv("GITHUB_TOKEN", "test-token")
+	envSandbox.SetEnv("REGISTRY_HOST", "registry.example.com")
+	envSandbox.SetEnv("REGISTRY_USERNAME", "test-user")
+	envSandbox.SetEnv("REGISTRY_PASSWD", "test-pass")
 
-	cfg, err := config.Load()
+	cfg, err := config.LoadForTesting()
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
@@ -96,126 +81,94 @@ func TestValidateConfig_MissingRequired(t *testing.T) {
 	defer os.Chdir(origDir)
 	os.Chdir(tmpDir)
 
-	// Save and restore environment
-	envVars := map[string]string{
-		"GITHUB_OWNER":       os.Getenv("GITHUB_OWNER"),
-		"GITHUB_REPO":        os.Getenv("GITHUB_REPO"),
-		"GITHUB_TOKEN":       os.Getenv("GITHUB_TOKEN"),
-		"REGISTRY_HOST":      os.Getenv("REGISTRY_HOST"),
-		"REGISTRY_USERNAME":  os.Getenv("REGISTRY_USERNAME"),
-		"REGISTRY_PASSWD":    os.Getenv("REGISTRY_PASSWD"),
-	}
-	defer func() {
-		for k, v := range envVars {
-			if v == "" {
-				os.Unsetenv(k)
-			} else {
-				os.Setenv(k, v)
-			}
-		}
-	}()
+	// Create a new environment sandbox for this test
+	envSandbox := config.NewEnvSandbox()
+	defer envSandbox.Restore()
 
 	// Clear all environment variables first
-	os.Unsetenv("GITHUB_OWNER")
-	os.Unsetenv("GITHUB_REPO")
-	os.Unsetenv("GITHUB_TOKEN")
-	os.Unsetenv("REGISTRY_HOST")
-	os.Unsetenv("REGISTRY_USERNAME")
-	os.Unsetenv("REGISTRY_PASSWD")
+	envSandbox.UnsetEnv("GITHUB_OWNER")
+	envSandbox.UnsetEnv("GITHUB_REPO")
+	envSandbox.UnsetEnv("GITHUB_TOKEN")
+	envSandbox.UnsetEnv("REGISTRY_HOST")
+	envSandbox.UnsetEnv("REGISTRY_USERNAME")
+	envSandbox.UnsetEnv("REGISTRY_PASSWD")
 
 	// Ensure no config file exists
 	os.Remove("config.yaml")
 	os.Remove(filepath.Join(os.Getenv("HOME"), ".image-copier", "config.yaml"))
 
 	tests := []struct {
-		name       string
-		unsetVars  []string
-		setVars    map[string]string
-		wantErr    bool
+		name        string
+		unsetVars   []string
+		setVars     map[string]string
+		wantErr     bool
 		errContains string
 	}{
 		{
-			name:      "all required vars set",
-			setVars:   map[string]string{"GITHUB_OWNER": "o", "GITHUB_REPO": "r", "GITHUB_TOKEN": "t", "REGISTRY_HOST": "h", "REGISTRY_USERNAME": "u", "REGISTRY_PASSWD": "p"},
-			wantErr:   false,
+			name:    "all required vars set",
+			setVars: map[string]string{"GITHUB_OWNER": "o", "GITHUB_REPO": "r", "GITHUB_TOKEN": "t", "REGISTRY_HOST": "h", "REGISTRY_USERNAME": "u", "REGISTRY_PASSWD": "p"},
+			wantErr: false,
 		},
 		{
-			name:       "missing GITHUB_OWNER",
-			unsetVars:  []string{"GITHUB_OWNER"},
-			setVars:    map[string]string{"GITHUB_REPO": "r", "GITHUB_TOKEN": "t", "REGISTRY_HOST": "h", "REGISTRY_USERNAME": "u", "REGISTRY_PASSWD": "p"},
-			wantErr:    true,
+			name:        "missing GITHUB_OWNER",
+			unsetVars:   []string{"GITHUB_OWNER"},
+			setVars:     map[string]string{"GITHUB_REPO": "r", "GITHUB_TOKEN": "t", "REGISTRY_HOST": "h", "REGISTRY_USERNAME": "u", "REGISTRY_PASSWD": "p"},
+			wantErr:     true,
 			errContains: "github owner",
 		},
 		{
-			name:       "missing GITHUB_REPO",
-			unsetVars:  []string{"GITHUB_REPO"},
-			setVars:    map[string]string{"GITHUB_OWNER": "o", "GITHUB_TOKEN": "t", "REGISTRY_HOST": "h", "REGISTRY_USERNAME": "u", "REGISTRY_PASSWD": "p"},
-			wantErr:    true,
+			name:        "missing GITHUB_REPO",
+			unsetVars:   []string{"GITHUB_REPO"},
+			setVars:     map[string]string{"GITHUB_OWNER": "o", "GITHUB_TOKEN": "t", "REGISTRY_HOST": "h", "REGISTRY_USERNAME": "u", "REGISTRY_PASSWD": "p"},
+			wantErr:     true,
 			errContains: "github repo",
 		},
 		{
-			name:       "missing GITHUB_TOKEN",
-			unsetVars:  []string{"GITHUB_TOKEN"},
-			setVars:    map[string]string{"GITHUB_OWNER": "o", "GITHUB_REPO": "r", "REGISTRY_HOST": "h", "REGISTRY_USERNAME": "u", "REGISTRY_PASSWD": "p"},
-			wantErr:    true,
+			name:        "missing GITHUB_TOKEN",
+			unsetVars:   []string{"GITHUB_TOKEN"},
+			setVars:     map[string]string{"GITHUB_OWNER": "o", "GITHUB_REPO": "r", "GITHUB_HOST": "h", "REGISTRY_USERNAME": "u", "REGISTRY_PASSWD": "p"},
+			wantErr:     true,
 			errContains: "github token",
 		},
 		{
-			name:       "missing REGISTRY_HOST",
-			unsetVars:  []string{"REGISTRY_HOST"},
-			setVars:    map[string]string{"GITHUB_OWNER": "o", "GITHUB_REPO": "r", "GITHUB_TOKEN": "t", "REGISTRY_USERNAME": "u", "REGISTRY_PASSWD": "p"},
-			wantErr:    true,
+			name:        "missing REGISTRY_HOST",
+			unsetVars:   []string{"REGISTRY_HOST"},
+			setVars:     map[string]string{"GITHUB_OWNER": "o", "GITHUB_REPO": "r", "GITHUB_TOKEN": "t", "REGISTRY_USERNAME": "u", "REGISTRY_PASSWD": "p"},
+			wantErr:     true,
 			errContains: "registry host",
 		},
 		{
-			name:       "missing REGISTRY_USERNAME",
-			unsetVars:  []string{"REGISTRY_USERNAME"},
-			setVars:    map[string]string{"GITHUB_OWNER": "o", "GITHUB_REPO": "r", "GITHUB_TOKEN": "t", "REGISTRY_HOST": "h", "REGISTRY_PASSWD": "p"},
-			wantErr:    true,
+			name:        "missing REGISTRY_USERNAME",
+			unsetVars:   []string{"REGISTRY_USERNAME"},
+			setVars:     map[string]string{"GITHUB_OWNER": "o", "GITHUB_REPO": "r", "GITHUB_TOKEN": "t", "REGISTRY_HOST": "h", "REGISTRY_PASSWD": "p"},
+			wantErr:     true,
 			errContains: "registry username",
 		},
 		{
-			name:       "missing REGISTRY_PASSWD",
-			unsetVars:  []string{"REGISTRY_PASSWD"},
-			setVars:    map[string]string{"GITHUB_OWNER": "o", "GITHUB_REPO": "r", "GITHUB_TOKEN": "t", "REGISTRY_HOST": "h", "REGISTRY_USERNAME": "u"},
-			wantErr:    true,
+			name:        "missing REGISTRY_PASSWD",
+			unsetVars:   []string{"REGISTRY_PASSWD"},
+			setVars:     map[string]string{"GITHUB_OWNER": "o", "GITHUB_REPO": "r", "GITHUB_TOKEN": "t", "REGISTRY_HOST": "h", "REGISTRY_USERNAME": "u"},
+			wantErr:     true,
 			errContains: "registry password",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Save current environment
-			savedVars := make(map[string]string)
-			for k := range tt.setVars {
-				savedVars[k] = os.Getenv(k)
-			}
-			for _, k := range tt.unsetVars {
-				savedVars[k] = os.Getenv(k)
-			}
+			// Prepare environment for this specific test
+			testEnv := make(map[string]string)
 
-			// Clean up at the end of test
-			defer func() {
-				for k, v := range savedVars {
-					if v == "" {
-						os.Unsetenv(k)
-					} else {
-						os.Setenv(k, v)
-					}
-				}
-			}()
-
-			// Unset all var first
-			for _, v := range tt.unsetVars {
-				os.Unsetenv(v)
-			}
-
-			// Set specific vars
+			// Set the required variables for this test
 			for k, v := range tt.setVars {
-				os.Setenv(k, v)
+				testEnv[k] = v
 			}
 
-			_, err := config.Load()
+			// Ensure unset variables are not set in the environment
+			for _, unsetVar := range tt.unsetVars {
+				delete(testEnv, unsetVar)
+			}
+
+			_, err := config.LoadForTestingWithEnv(testEnv)
 
 			if tt.wantErr {
 				if err == nil {
@@ -242,52 +195,34 @@ func TestLoadConfig_WithDefaults(t *testing.T) {
 	defer os.Chdir(origDir)
 	os.Chdir(tmpDir)
 
-	// Save and restore environment
-	envVars := map[string]string{
-		"GITHUB_OWNER":       os.Getenv("GITHUB_OWNER"),
-		"GITHUB_REPO":        os.Getenv("GITHUB_REPO"),
-		"GITHUB_TOKEN":       os.Getenv("GITHUB_TOKEN"),
-		"REGISTRY_HOST":      os.Getenv("REGISTRY_HOST"),
-		"REGISTRY_USERNAME":  os.Getenv("REGISTRY_USERNAME"),
-		"REGISTRY_PASSWD":    os.Getenv("REGISTRY_PASSWD"),
-		"GITHUB_WORKFLOW_ID": os.Getenv("GITHUB_WORKFLOW_ID"),
-		"REGISTRY_ARCH":      os.Getenv("REGISTRY_ARCH"),
-		"REGISTRY_OS":        os.Getenv("REGISTRY_OS"),
-	}
-	defer func() {
-		for k, v := range envVars {
-			if v == "" {
-				os.Unsetenv(k)
-			} else {
-				os.Setenv(k, v)
-			}
-		}
-	}()
+	// Create a new environment sandbox for this test
+	envSandbox := config.NewEnvSandbox()
+	defer envSandbox.Restore()
 
 	// Clear all relevant environment variables
-	os.Unsetenv("GITHUB_OWNER")
-	os.Unsetenv("GITHUB_REPO")
-	os.Unsetenv("GITHUB_TOKEN")
-	os.Unsetenv("REGISTRY_HOST")
-	os.Unsetenv("REGISTRY_USERNAME")
-	os.Unsetenv("REGISTRY_PASSWD")
-	os.Unsetenv("GITHUB_WORKFLOW_ID")
-	os.Unsetenv("REGISTRY_ARCH")
-	os.Unsetenv("REGISTRY_OS")
+	envSandbox.UnsetEnv("GITHUB_OWNER")
+	envSandbox.UnsetEnv("GITHUB_REPO")
+	envSandbox.UnsetEnv("GITHUB_TOKEN")
+	envSandbox.UnsetEnv("REGISTRY_HOST")
+	envSandbox.UnsetEnv("REGISTRY_USERNAME")
+	envSandbox.UnsetEnv("REGISTRY_PASSWD")
+	envSandbox.UnsetEnv("GITHUB_WORKFLOW_ID")
+	envSandbox.UnsetEnv("REGISTRY_ARCH")
+	envSandbox.UnsetEnv("REGISTRY_OS")
 
 	// Ensure no config file exists
 	os.Remove("config.yaml")
 	os.Remove(filepath.Join(os.Getenv("HOME"), ".image-copier", "config.yaml"))
 
 	// Setup minimal required environment
-	os.Setenv("GITHUB_OWNER", "test-owner")
-	os.Setenv("GITHUB_REPO", "test-repo")
-	os.Setenv("GITHUB_TOKEN", "test-token")
-	os.Setenv("REGISTRY_HOST", "registry.example.com")
-	os.Setenv("REGISTRY_USERNAME", "test-user")
-	os.Setenv("REGISTRY_PASSWD", "test-pass")
+	envSandbox.SetEnv("GITHUB_OWNER", "test-owner")
+	envSandbox.SetEnv("GITHUB_REPO", "test-repo")
+	envSandbox.SetEnv("GITHUB_TOKEN", "test-token")
+	envSandbox.SetEnv("REGISTRY_HOST", "registry.example.com")
+	envSandbox.SetEnv("REGISTRY_USERNAME", "test-user")
+	envSandbox.SetEnv("REGISTRY_PASSWD", "test-pass")
 
-	cfg, err := config.Load()
+	cfg, err := config.LoadForTesting()
 	if err != nil {
 		t.Fatalf("Failed to load config: %v", err)
 	}
@@ -342,8 +277,8 @@ func TestConfigFilePath(t *testing.T) {
 	tmpDir := t.TempDir()
 	origXDG := os.Getenv("XDG_CONFIG_HOME")
 	defer os.Setenv("XDG_CONFIG_HOME", origXDG)
-
 	os.Setenv("XDG_CONFIG_HOME", tmpDir)
+
 	expected := filepath.Join(tmpDir, "image-copier", "config.yaml")
 	got := config.ConfigFilePath()
 	if got != expected {
@@ -367,42 +302,24 @@ func TestConfigFilePath_DefaultXDG(t *testing.T) {
 
 // TestLoadConfig_WithOptionalEnv tests optional environment variables
 func TestLoadConfig_WithOptionalEnv(t *testing.T) {
-	// Save and restore environment
-	envVars := map[string]string{
-		"GITHUB_OWNER":       os.Getenv("GITHUB_OWNER"),
-		"GITHUB_REPO":        os.Getenv("GITHUB_REPO"),
-		"GITHUB_TOKEN":       os.Getenv("GITHUB_TOKEN"),
-		"REGISTRY_HOST":      os.Getenv("REGISTRY_HOST"),
-		"REGISTRY_USERNAME":  os.Getenv("REGISTRY_USERNAME"),
-		"REGISTRY_PASSWD":    os.Getenv("REGISTRY_PASSWD"),
-		"REGISTRY_NAMESPACE": os.Getenv("REGISTRY_NAMESPACE"),
-		"REGISTRY_ARCH":      os.Getenv("REGISTRY_ARCH"),
-		"REGISTRY_OS":        os.Getenv("REGISTRY_OS"),
-	}
-	defer func() {
-		for k, v := range envVars {
-			if v == "" {
-				os.Unsetenv(k)
-			} else {
-				os.Setenv(k, v)
-			}
-		}
-	}()
+	// Create a new environment sandbox for this test
+	envSandbox := config.NewEnvSandbox()
+	defer envSandbox.Restore()
 
 	// Setup required env vars
-	os.Setenv("GITHUB_OWNER", "test-owner")
-	os.Setenv("GITHUB_REPO", "test-repo")
-	os.Setenv("GITHUB_TOKEN", "test-token")
-	os.Setenv("REGISTRY_HOST", "registry.example.com")
-	os.Setenv("REGISTRY_USERNAME", "test-user")
-	os.Setenv("REGISTRY_PASSWD", "test-pass")
+	envSandbox.SetEnv("GITHUB_OWNER", "test-owner")
+	envSandbox.SetEnv("GITHUB_REPO", "test-repo")
+	envSandbox.SetEnv("GITHUB_TOKEN", "test-token")
+	envSandbox.SetEnv("REGISTRY_HOST", "registry.example.com")
+	envSandbox.SetEnv("REGISTRY_USERNAME", "test-user")
+	envSandbox.SetEnv("REGISTRY_PASSWD", "test-pass")
 
 	// Test custom optional values
-	os.Setenv("REGISTRY_NAMESPACE", "my-namespace")
-	os.Setenv("REGISTRY_ARCH", "arm64")
-	os.Setenv("REGISTRY_OS", "windows")
+	envSandbox.SetEnv("REGISTRY_NAMESPACE", "my-namespace")
+	envSandbox.SetEnv("REGISTRY_ARCH", "arm64")
+	envSandbox.SetEnv("REGISTRY_OS", "windows")
 
-	cfg, err := config.Load()
+	cfg, err := config.LoadForTesting()
 	if err != nil {
 		t.Fatalf("Failed to load config: %v", err)
 	}
@@ -463,34 +380,24 @@ log_level: "debug"
 
 	os.Chdir(tmpDir)
 
-	// Save and restore environment
-	envVars := map[string]string{
-		"GITHUB_OWNER":       os.Getenv("GITHUB_OWNER"),
-		"GITHUB_REPO":        os.Getenv("GITHUB_REPO"),
-		"GITHUB_TOKEN":       os.Getenv("GITHUB_TOKEN"),
-		"REGISTRY_HOST":      os.Getenv("REGISTRY_HOST"),
-		"REGISTRY_USERNAME":  os.Getenv("REGISTRY_USERNAME"),
-		"REGISTRY_PASSWD":    os.Getenv("REGISTRY_PASSWD"),
-	}
-	defer func() {
-		for k, v := range envVars {
-			if v == "" {
-				os.Unsetenv(k)
-			} else {
-				os.Setenv(k, v)
-			}
-		}
-	}()
+	// Create a new environment sandbox for this test
+	envSandbox := config.NewEnvSandbox()
+	defer envSandbox.Restore()
 
 	// Clear environment variables to ensure file values are used
-	os.Unsetenv("GITHUB_OWNER")
-	os.Unsetenv("GITHUB_REPO")
-	os.Unsetenv("GITHUB_TOKEN")
-	os.Unsetenv("REGISTRY_HOST")
-	os.Unsetenv("REGISTRY_USERNAME")
-	os.Unsetenv("REGISTRY_PASSWD")
+	envSandbox.UnsetEnv("GITHUB_OWNER")
+	envSandbox.UnsetEnv("GITHUB_REPO")
+	envSandbox.UnsetEnv("GITHUB_TOKEN")
+	envSandbox.UnsetEnv("GITHUB_WORKFLOW_ID")
+	envSandbox.UnsetEnv("REGISTRY_HOST")
+	envSandbox.UnsetEnv("REGISTRY_USERNAME")
+	envSandbox.UnsetEnv("REGISTRY_PASSWD")
+	envSandbox.UnsetEnv("REGISTRY_NAMESPACE")
+	envSandbox.UnsetEnv("REGISTRY_ARCH")
+	envSandbox.UnsetEnv("REGISTRY_OS")
+	envSandbox.UnsetEnv("LOG_LEVEL")
 
-	cfg, err := config.Load()
+	cfg, err := config.LoadWithConfigPath(configFile)  // Use the config-specific path loading
 	if err != nil {
 		t.Fatalf("Failed to load config from file: %v", err)
 	}
