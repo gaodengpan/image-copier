@@ -21,6 +21,7 @@ Thumbs.db
 .claude
 .worktrees
 .full-review
+.tdd-cycle
 
 openspec
 docs
