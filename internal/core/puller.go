@@ -18,23 +18,23 @@ import (
 
 // 定义常量
 const (
-	DefaultCacheTTL    = 30 * time.Second  // 默认缓存有效期
+	DefaultCacheTTL     = 30 * time.Second // 默认缓存有效期
 	MaxCacheSizeDefault = 10000            // 默认最大缓存大小
-	DockerInspectCmd   = "docker"
-	SkopeoCmd          = "skopeo"
-	DockerImageFormat  = "{{.Repository}}:{{.Tag}}"
+	DockerCmd           = "docker"
+	SkopeoCmd           = "skopeo"
+	DockerImageFormat   = "{{.Repository}}:{{.Tag}}"
 )
 
 // PullStage represents a stage in the image pull pipeline.
 type PullStage int
 
 const (
-	StageCheckLocal    PullStage = iota // Check local image
-	StageCheckRegistry                  // Check remote registry
-	StageTriggerWorkflow                // Trigger GitHub Workflow
-	StageWaitWorkflow                   // Wait for Workflow completion
-	StageCopyImage                      // skopeo copy (download image)
-	StageLoadImage                      // docker load (import locally)
+	StageCheckLocal      PullStage = iota // Check local image
+	StageCheckRegistry                    // Check remote registry
+	StageTriggerWorkflow                  // Trigger GitHub Workflow
+	StageWaitWorkflow                     // Wait for Workflow completion
+	StageCopyImage                        // skopeo copy (download image)
+	StageLoadImage                        // docker load (import locally)
 )
 
 // StageCallback is called when PullSingle transitions between stages.
@@ -43,32 +43,32 @@ type StageCallback func(stage PullStage, polls int)
 
 // Puller handles the image pulling process
 type Puller struct {
-	Config        *Config
-	RetryConfig   *retry.Config
-	Logger        *logrus.Logger
-	StageCallback StageCallback
-	HTTPClient    *http.Client
+	Config          *Config
+	RetryConfig     *retry.Config
+	Logger          *logrus.Logger
+	StageCallback   StageCallback
+	HTTPClient      *http.Client
 	LocalImageCache map[string]bool
-	CacheTimestamp time.Time
-	cacheMutex     sync.RWMutex
-	MaxCacheSize   int  // Maximum number of entries in the cache
+	CacheTimestamp  time.Time
+	cacheMutex      sync.RWMutex
+	MaxCacheSize    int // Maximum number of entries in the cache
 }
 
 // Config holds the configuration needed for Puller
 type Config struct {
-	GithubOwner    string
-	GithubRepo     string
-	GithubToken    string
-	GithubWorkflowID string
-	RegistryHost   string
-	RegistryUsername string
-	RegistryPassword string
+	GithubOwner       string
+	GithubRepo        string
+	GithubToken       string
+	GithubWorkflowID  string
+	RegistryHost      string
+	RegistryUsername  string
+	RegistryPassword  string
 	RegistryNamespace string
-	RegistryArch   string
-	RegistryOs     string
-	Force          bool
-	RetryConfig    *retry.Config
-	DryRun         bool
+	RegistryArch      string
+	RegistryOs        string
+	Force             bool
+	RetryConfig       *retry.Config
+	DryRun            bool
 }
 
 // ErrSkipped indicates an image was skipped because it already exists locally.
@@ -131,8 +131,8 @@ func (p *Puller) checkLocalImageWithCacheRefresh(ctx context.Context, imageID st
 
 	// Double-check condition after acquiring write lock
 	needsRefresh := time.Since(p.CacheTimestamp) >= DefaultCacheTTL ||
-	               len(p.LocalImageCache) == 0 ||
-				   len(p.LocalImageCache) >= p.MaxCacheSize // Check if cache is too large
+		len(p.LocalImageCache) == 0 ||
+		len(p.LocalImageCache) >= p.MaxCacheSize // Check if cache is too large
 
 	if needsRefresh {
 		// Refresh the entire cache
@@ -143,7 +143,7 @@ func (p *Puller) checkLocalImageWithCacheRefresh(ctx context.Context, imageID st
 			ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			defer cancel()
 
-			cmd := exec.CommandContext(ctx, DockerInspectCmd, "image", "inspect", imageID)
+			cmd := exec.CommandContext(ctx, DockerCmd, "image", "inspect", imageID)
 			cmd.Stdout = nil
 			cmd.Stderr = nil
 			err := cmd.Run()
@@ -179,7 +179,7 @@ func (p *Puller) getAllLocalImages(ctx context.Context) (map[string]bool, error)
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, DockerInspectCmd, "image", "ls", "--format", DockerImageFormat)
+	cmd := exec.CommandContext(ctx, DockerCmd, "image", "ls", "--format", DockerImageFormat)
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list local images: %w", err)
@@ -387,11 +387,11 @@ func (p *Puller) triggerWorkflow(ctx context.Context, sourceID, destImageID stri
 	data := map[string]interface{}{
 		"ref": "master",
 		"inputs": map[string]string{
-			"imageId":      sourceID,
-			"destImageId":  destImageID,
-			"suffix":       suffix,
-			"arch":         p.Config.RegistryArch,
-			"os":           p.Config.RegistryOs,
+			"imageId":     sourceID,
+			"destImageId": destImageID,
+			"suffix":      suffix,
+			"arch":        p.Config.RegistryArch,
+			"os":          p.Config.RegistryOs,
 		},
 	}
 
@@ -648,7 +648,7 @@ func (p *Puller) copyAndImportImage(ctx context.Context, destImageID, sourceID s
 	loadCtx, loadCancel := context.WithTimeout(ctx, 60*time.Second)
 	defer loadCancel()
 
-	cmd = exec.CommandContext(loadCtx, DockerInspectCmd, "load", "-i", tmpPath)
+	cmd = exec.CommandContext(loadCtx, DockerCmd, "load", "-i", tmpPath)
 	output, err = cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("docker load failed: %s, output: %s", err, string(output))

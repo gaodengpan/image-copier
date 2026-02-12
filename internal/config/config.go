@@ -351,11 +351,6 @@ type ViperConfigProvider struct {
 	viper *viper.Viper
 }
 
-// ConfigManager provides a centralized way to handle application configuration
-// This implements the configuration management abstraction goal
-type ConfigManager struct {
-	viper *viper.Viper
-}
 
 // NewViperConfigProvider creates a new instance of ViperConfigProvider
 func NewViperConfigProvider() *ViperConfigProvider {
@@ -462,52 +457,6 @@ func (vp *ViperConfigProvider) GetConfigPath() string {
 	return ""
 }
 
-// LoadConfiguration loads the configuration from file
-func (cm *ConfigManager) LoadConfiguration(configPath string) error {
-	if configPath != "" {
-		// Set the config file
-		configDir := filepath.Dir(configPath)
-		configName := filepath.Base(configPath)
-
-		// Remove extension to get config name
-		ext := filepath.Ext(configName)
-		configName = configName[:len(configName)-len(ext)]
-
-		cm.viper.SetConfigName(configName)
-		cm.viper.AddConfigPath(configDir)
-	} else {
-		// Set default config paths
-		cm.viper.SetConfigName("config")
-		cm.viper.AddConfigPath(".")                          // current directory
-		cm.viper.AddConfigPath("$HOME/.config/image-copier") // user's config directory
-		cm.viper.AddConfigPath("/etc/image-copier/")         // system-wide config
-	}
-
-	if err := cm.viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			return fmt.Errorf("error reading config file: %w", err)
-		}
-		// Config file not found, but that's okay - we'll rely on env vars and defaults
-	}
-
-	return nil
-}
-
-// GetConfig returns the loaded configuration as a Config struct
-func (cm *ConfigManager) GetConfig() (*Config, error) {
-	var config Config
-	err := cm.viper.Unmarshal(&config)
-	if err != nil {
-		return nil, fmt.Errorf("unable to decode configuration into struct: %w", err)
-	}
-
-	// Validate required fields
-	if err := validateConfig(&config); err != nil {
-		return nil, err
-	}
-
-	return &config, nil
-}
 
 // LoadWithConfigPath loads configuration from a specific file path
 func LoadWithConfigPath(configPath string) (*Config, error) {
