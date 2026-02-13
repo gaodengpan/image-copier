@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -17,19 +16,12 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// 定义常量
+// Define constants - Updated to English comments
 const (
-	DefaultCacheTTL     = 30 * time.Second // 默认缓存有效期
-	MaxCacheSizeDefault = 10000            // 默认最大缓存大小
-	DockerCmd           = "docker"
-	SkopeoCmd           = "skopeo"
-	DockerImageFormat   = "{{.Repository}}:{{.Tag}}"
-	MaxNormalizedLen    = 40               // 最大归一化长度
-	CredentialsSep      = ":"              // 凭据分隔符
+	// Using constants from constants.go
 )
 
-// 正则表达式预编译
-var imageValidationRegex = regexp.MustCompile(`^[a-zA-Z0-9._-]+(/[a-zA-Z0-9._-]+)*(:[a-zA-Z0-9._-]+)?(@[a-zA-Z0-9._:-]+)?$|^([a-zA-Z0-9._-]+:[0-9]+/[a-zA-Z0-9._-]+(/[a-zA-Z0-9._-]+)*)(:[a-zA-Z0-9._-]+)?(@[a-zA-Z0-9._:-]+)?$`)
+// 正则 expression precompiled - removed as it's now in validation.go
 
 // PullStage represents a stage in the image pull pipeline.
 type PullStage int
@@ -59,6 +51,7 @@ type Puller struct {
 	cacheMutex      sync.RWMutex
 	MaxCacheSize    int // Maximum number of entries in the cache
 	refreshMutex    sync.Mutex // Mutex for preventing concurrent cache refreshes
+	ImageValidator  *ImageValidator // Validator for image names and credentials
 }
 
 // Config holds the configuration needed for Puller
@@ -88,19 +81,19 @@ var ErrDryRun = fmt.Errorf("dry-run: no changes made")
 func sanitizeForLog(input string) string {
 	// Create a hash of the input to use for logging
 	hash := sha256.Sum256([]byte(input))
-	return fmt.Sprintf("[REDACTED:%x]", hash[:8])
+	return fmt.Sprintf("%s%x%s", SensitiveDataPrefix, hash[:8], SensitiveDataSuffix)
 }
 
 // validateImageNameInput validates an image name to prevent command injection
 func validateImageNameInput(name string) bool {
-	// Additional check to ensure no dangerous shell characters are present
-	noShellChars := !strings.ContainsAny(name, "$`\"'\\;&|()<>()[]{}")
-	return imageValidationRegex.MatchString(name) && noShellChars
+	validator := NewImageValidator()
+	return validator.ValidateImageNameInput(name)
 }
 
 // isValidImageName validates an image name to prevent command injection
 func isValidImageName(name string) bool {
-	return validateImageNameInput(name)
+	validator := NewImageValidator()
+	return validator.IsValidImageName(name)
 }
 
 // createTempFile creates a temporary file for image operations
@@ -116,7 +109,7 @@ func createTempFile() (string, error) {
 
 // executeSkopeoCopy executes the skopeo copy command
 func executeSkopeoCopy(ctx context.Context, skopeoCmd, creds, destImageID, tmpPath, sourceID string) error {
-	skopeoCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
+	skopeoCtx, cancel := context.WithTimeout(ctx, SkopeoCopyTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(skopeoCtx, skopeoCmd, "copy", "--src-creds="+creds,
@@ -124,20 +117,20 @@ func executeSkopeoCopy(ctx context.Context, skopeoCmd, creds, destImageID, tmpPa
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("skopeo copy failed: %s, output: %s", err, string(output))
+		return fmt.Errorf("%s: %s, output: %s", ErrCommandFailed, err, string(output))
 	}
 	return nil
 }
 
 // executeDockerLoad executes the docker load command
 func executeDockerLoad(ctx context.Context, dockerCmd, tmpPath string) error {
-	loadCtx, loadCancel := context.WithTimeout(ctx, 60*time.Second)
+	loadCtx, loadCancel := context.WithTimeout(ctx, DockerLoadTimeout)
 	defer loadCancel()
 
 	cmd := exec.CommandContext(loadCtx, dockerCmd, "load", "-i", tmpPath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("docker load failed: %s, output: %s", err, string(output))
+		return fmt.Errorf("%s: %s, output: %s", ErrCommandFailed, err, string(output))
 	}
 	return nil
 }
@@ -159,8 +152,8 @@ func hasTagOrDigest(s string) bool {
 // CheckLocalImageExists checks whether the given image is available in the local Docker daemon.
 func (p *Puller) CheckLocalImageExists(ctx context.Context, imageID string) (bool, error) {
 	// Validate input to prevent command injection
-	if !isValidImageName(imageID) {
-		return false, fmt.Errorf("invalid image name: %s", sanitizeForLog(imageID))
+	if !p.ImageValidator.IsValidImageName(imageID) {
+		return false, fmt.Errorf("%s: %s", ErrInvalidImageName, sanitizeForLog(imageID))
 	}
 
 	// Check cache first
@@ -181,8 +174,8 @@ func (p *Puller) CheckLocalImageExists(ctx context.Context, imageID string) (boo
 // checkLocalImageWithCacheRefresh performs the actual check and refreshes the cache if needed
 func (p *Puller) checkLocalImageWithCacheRefresh(ctx context.Context, imageID string) (bool, error) {
 	// Validate input to prevent command injection
-	if !isValidImageName(imageID) {
-		return false, fmt.Errorf("invalid image name: %s", sanitizeForLog(imageID))
+	if !p.ImageValidator.IsValidImageName(imageID) {
+		return false, fmt.Errorf("%s: %s", ErrInvalidImageName, sanitizeForLog(imageID))
 	}
 
 	// Use refreshMutex to prevent multiple goroutines from refreshing cache simultaneously
@@ -204,10 +197,10 @@ func (p *Puller) checkLocalImageWithCacheRefresh(ctx context.Context, imageID st
 
 			// Fallback to individual check if unable to refresh cache
 			// Use context with timeout to prevent hanging
-			ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			ctx, cancel := context.WithTimeout(ctx, CheckLocalTimeout)
 			defer cancel()
 
-			cmd := exec.CommandContext(ctx, DockerCmd, "image", "inspect", imageID)
+			cmd := exec.CommandContext(ctx, DockerCommand, "image", "inspect", imageID)
 			cmd.Stdout = nil
 			cmd.Stderr = nil
 			err := cmd.Run()
@@ -244,11 +237,12 @@ func (p *Puller) CleanupCache() {
 // parseDockerImageOutput parses the output from docker image ls command
 func parseDockerImageOutput(output string, maxCacheSize int) map[string]bool {
 	images := make(map[string]bool)
+	validator := NewImageValidator() // Create a validator instance to use its validation methods
 	lines := strings.Split(string(output), "\n")
 	count := 0
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		if line != "" && validateImageNameInput(line) && count < maxCacheSize { // Only add valid image names to cache and respect size limit
+		if line != "" && validator.ValidateImageNameInput(line) && count < maxCacheSize { // Only add valid image names to cache and respect size limit
 			images[line] = true
 			count++
 		}
@@ -260,10 +254,10 @@ func parseDockerImageOutput(output string, maxCacheSize int) map[string]bool {
 func (p *Puller) getAllLocalImages(ctx context.Context) (map[string]bool, error) {
 	// Validate that we're not running this command with unsafe inputs
 	// Although we're not accepting user input here, this is a good safety check
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, ListImagesTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, DockerCmd, "image", "ls", "--format", DockerImageFormat)
+	cmd := exec.CommandContext(ctx, DockerCommand, "image", "ls", "--format", DockerImageFormat)
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list local images: %w", err)
@@ -273,14 +267,12 @@ func (p *Puller) getAllLocalImages(ctx context.Context) (map[string]bool, error)
 	return images, nil
 }
 
-// NewPuller creates a new Puller instance
-func NewPuller(config *Config, logger *logrus.Logger) *Puller {
-	rc := config.RetryConfig
-	if rc == nil {
-		rc = retry.DefaultConfig()
-	}
+// HTTPClientFactory creates HTTP clients with common settings
+type HTTPClientFactory struct{}
 
-	httpClient := &http.Client{
+// NewHTTPClient creates a new HTTP client with common configuration
+func (f *HTTPClientFactory) NewHTTPClient() *http.Client {
+	return &http.Client{
 		Timeout: 30 * time.Second,
 		Transport: &http.Transport{
 			MaxIdleConns:        100,
@@ -288,6 +280,16 @@ func NewPuller(config *Config, logger *logrus.Logger) *Puller {
 			IdleConnTimeout:     90 * time.Second,
 		},
 	}
+}
+
+// NewPuller creates a new Puller instance
+func NewPuller(config *Config, logger *logrus.Logger) *Puller {
+	rc := config.RetryConfig
+	if rc == nil {
+		rc = retry.DefaultConfig()
+	}
+
+	httpClient := (&HTTPClientFactory{}).NewHTTPClient()
 
 	return &Puller{
 		Config:          config,
@@ -299,6 +301,7 @@ func NewPuller(config *Config, logger *logrus.Logger) *Puller {
 		cacheMutex:      sync.RWMutex{},
 		MaxCacheSize:    MaxCacheSizeDefault, // Use default maximum cache size
 		refreshMutex:    sync.Mutex{},        // Initialize mutex for cache refresh synchronization
+		ImageValidator:  NewImageValidator(), // Initialize image validator
 	}
 }
 
@@ -311,7 +314,7 @@ func (p *Puller) notifyStage(stage PullStage, polls int) {
 // PullSingle pulls a single image through GitHub Actions
 func (p *Puller) PullSingle(ctx context.Context, imageID string) error {
 	// Validate input to prevent command injection
-	if !isValidImageName(imageID) {
+	if !p.ImageValidator.IsValidImageName(imageID) {
 		return fmt.Errorf("invalid image name: %s", sanitizeForLog(imageID))
 	}
 
@@ -428,22 +431,23 @@ func BuildDestImageID(registryHost, registryNamespace, sourceID string) string {
 // CheckImageExists checks if an image exists in a registry using skopeo.
 func CheckImageExists(ctx context.Context, destImageID, username, password string) (bool, error) {
 	// Validate inputs to prevent command injection
-	if !isValidImageName(destImageID) {
-		return false, fmt.Errorf("invalid destination image ID: %s", sanitizeForLog(destImageID))
+	validator := NewImageValidator() // Create a validator instance to use its validation methods
+	if !validator.IsValidImageName(destImageID) {
+		return false, fmt.Errorf("%s: %s", ErrInvalidImageName, sanitizeForLog(destImageID))
 	}
 
 	// Validate username and password to ensure they don't contain command injection chars
-	if strings.ContainsAny(username, "$`\"'\\;&|()") || strings.ContainsAny(password, "$`\"'\\;&|()") {
-		return false, fmt.Errorf("invalid credentials")
+	if !validator.ValidateCredentials(username, password) {
+		return false, fmt.Errorf(ErrInvalidCredentials)
 	}
 
-	creds := fmt.Sprintf("%s%s%s", username, CredentialsSep, password)
+	creds := fmt.Sprintf("%s%s%s", username, CredentialsSeparator, password)
 
 	// Create context with timeout to prevent indefinite hanging
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, SkopeoCmd, "inspect", "--creds="+creds, "docker://"+destImageID)
+	cmd := exec.CommandContext(ctx, SkopeoCommand, "inspect", "--creds="+creds, "docker://"+destImageID)
 
 	_, err := cmd.Output()
 	if err != nil {
@@ -483,9 +487,9 @@ func (p *Puller) triggerWorkflow(ctx context.Context, sourceID, destImageID stri
 			return fmt.Errorf("failed to create request: %w", err)
 		}
 
-		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("Accept", GitHubMediaType)
 		req.Header.Set("Authorization", "Bearer "+p.Config.GithubToken)
-		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+		req.Header.Set("X-GitHub-Api-Version", GitHubAPIVersion)
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := p.HTTPClient.Do(req)
@@ -522,13 +526,52 @@ func (p *Puller) triggerWorkflow(ctx context.Context, sourceID, destImageID stri
 	return runID, nil
 }
 
-func (p *Puller) findWorkflowRunID(ctx context.Context, sourceID, destImageID, suffix string) (string, error) {
-	expectedName := fmt.Sprintf("copy %s to %s%s", sourceID, destImageID, suffix)
-	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/workflows/%s/runs",
+// Helper function to build the expected workflow name
+func (p *Puller) buildExpectedWorkflowName(sourceID, destImageID, suffix string) string {
+	return fmt.Sprintf("copy %s to %s%s", sourceID, destImageID, suffix)
+}
+
+// Helper function to build the GitHub API URL for listing workflow runs
+func (p *Puller) buildWorkflowRunsURL() string {
+	return fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/workflows/%s/runs",
 		p.Config.GithubOwner, p.Config.GithubRepo, p.Config.GithubWorkflowID)
+}
+
+// Helper function to create the HTTP request for getting workflow runs
+func (p *Puller) createWorkflowRunsRequest(url string) (*http.Request, error) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Accept", GitHubMediaType)
+	req.Header.Set("Authorization", "Bearer "+p.Config.GithubToken)
+	req.Header.Set("X-GitHub-Api-Version", GitHubAPIVersion)
+
+	return req, nil
+}
+
+// Helper function to search for the workflow run ID in the API response
+func (p *Puller) searchWorkflowRunID(result struct {
+	WorkflowRuns []struct {
+		ID   int    `json:"id"`
+		Name string `json:"name"`
+	} `json:"workflow_runs"`
+}, expectedName string) (string, bool) {
+	for _, run := range result.WorkflowRuns {
+		if run.Name == expectedName {
+			return fmt.Sprintf("%d", run.ID), true
+		}
+	}
+	return "", false
+}
+
+func (p *Puller) findWorkflowRunID(ctx context.Context, sourceID, destImageID, suffix string) (string, error) {
+	expectedName := p.buildExpectedWorkflowName(sourceID, destImageID, suffix)
+	url := p.buildWorkflowRunsURL()
 
 	// Poll for up to 30 seconds
-	timeoutCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	timeoutCtx, cancel := context.WithTimeout(ctx, WorkflowPollTimeout)
 	defer cancel()
 
 	ticker := time.NewTimer(0)
@@ -539,14 +582,10 @@ func (p *Puller) findWorkflowRunID(ctx context.Context, sourceID, destImageID, s
 		case <-timeoutCtx.Done():
 			return "", fmt.Errorf("workflow run not found after 30 seconds")
 		case <-ticker.C:
-			req, err := http.NewRequest("GET", url, nil)
+			req, err := p.createWorkflowRunsRequest(url)
 			if err != nil {
 				return "", fmt.Errorf("failed to create request: %w", err)
 			}
-
-			req.Header.Set("Accept", "application/vnd.github+json")
-			req.Header.Set("Authorization", "Bearer "+p.Config.GithubToken)
-			req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
 			resp, err := p.HTTPClient.Do(req)
 			if err != nil {
@@ -571,10 +610,9 @@ func (p *Puller) findWorkflowRunID(ctx context.Context, sourceID, destImageID, s
 					continue
 				}
 
-				for _, run := range result.WorkflowRuns {
-					if run.Name == expectedName {
-						return fmt.Sprintf("%d", run.ID), nil
-					}
+				runID, found := p.searchWorkflowRunID(result, expectedName)
+				if found {
+					return runID, nil
 				}
 			} else if resp.StatusCode >= 500 {
 				// Server error, retry
@@ -672,11 +710,11 @@ func (p *Puller) waitForWorkflow(ctx context.Context, runID string) error {
 
 func (p *Puller) copyAndImportImage(ctx context.Context, destImageID, sourceID string) error {
 	// Validate inputs to prevent command injection
-	if !isValidImageName(destImageID) {
-		return fmt.Errorf("invalid destination image ID: %s", sanitizeForLog(destImageID))
+	if !p.ImageValidator.IsValidImageName(destImageID) {
+		return fmt.Errorf("%s: %s", ErrInvalidImageName, sanitizeForLog(destImageID))
 	}
-	if !isValidImageName(sourceID) {
-		return fmt.Errorf("invalid source image ID: %s", sanitizeForLog(sourceID))
+	if !p.ImageValidator.IsValidImageName(sourceID) {
+		return fmt.Errorf("%s: %s", ErrInvalidImageName, sanitizeForLog(sourceID))
 	}
 
 	// Create temporary file
@@ -698,21 +736,21 @@ func (p *Puller) copyAndImportImage(ctx context.Context, destImageID, sourceID s
 	// Validate credentials to prevent command injection
 	username := p.Config.RegistryUsername
 	password := p.Config.RegistryPassword
-	if strings.ContainsAny(username, "$`\"'\\;&|()") || strings.ContainsAny(password, "$`\"'\\;&|()") {
-		return fmt.Errorf("invalid credentials")
+	if !p.ImageValidator.ValidateCredentials(username, password) {
+		return fmt.Errorf(ErrInvalidCredentials)
 	}
 
-	creds := fmt.Sprintf("%s%s%s", username, CredentialsSep, password)
+	creds := fmt.Sprintf("%s%s%s", username, CredentialsSeparator, password)
 
 	// Execute skopeo copy
-	if err := executeSkopeoCopy(ctx, SkopeoCmd, creds, destImageID, tmpPath, sourceID); err != nil {
+	if err := executeSkopeoCopy(ctx, SkopeoCommand, creds, destImageID, tmpPath, sourceID); err != nil {
 		return err
 	}
 
 	p.notifyStage(StageLoadImage, 0)
 
 	// Execute docker load
-	if err := executeDockerLoad(ctx, DockerCmd, tmpPath); err != nil {
+	if err := executeDockerLoad(ctx, DockerCommand, tmpPath); err != nil {
 		return err
 	}
 
