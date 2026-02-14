@@ -1,5 +1,6 @@
 # Image Copier
 
+- Secure configuration management - **NEW!** Encrypt sensitive information (tokens, passwords) with AES-256-GCM encryption
 借助 GitHub Actions 中转，帮助国内开发者高速拉取海外 Docker 镜像。
 
 ## 使用场景
@@ -217,13 +218,13 @@ image-copier config show
 github:
   owner: "your-github-username"              # GitHub 用户名或组织
   repo: "image-copier"                       # 仓库名
-  token: "ghp_xxxxx"                         # Personal Access Token
+  token: "encrypted:XXXXXXX"                 # 加密后的 Personal Access Token
   workflow_id: "image-copier-v2.yaml"        # Workflow 文件名
 
 registry:
   host: "registry.cn-hangzhou.aliyuncs.com"  # 国内 Registry 地址
   username: "your-username"                  # Registry 用户名
-  password: "your-password"                  # Registry 密码
+  password: "encrypted:YYYYYYY"              # 加密后的 Registry 密码
   namespace: "your-namespace"                # 命名空间（可选）
   arch: "amd64"                              # 镜像架构（默认 amd64）
   os: "linux"                                # 操作系统（默认 linux）
