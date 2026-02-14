@@ -460,9 +460,11 @@ func NormalizeSourceID(imageID string) string {
 func BuildDestImageID(registryHost, registryNamespace, sourceID string) string {
 	// If host is empty, always normalize the source ID to avoid path issues
 	if registryHost == "" {
-		// Replace slashes and colons with underscores to avoid issues with file paths
+		// Replace slashes, colons, dots, and hyphens with underscores to avoid issues with Docker image names
 		normalized := strings.ReplaceAll(sourceID, "/", "_")
 		normalized = strings.ReplaceAll(normalized, ":", "_")
+		normalized = strings.ReplaceAll(normalized, ".", "_")
+		normalized = strings.ReplaceAll(normalized, "-", "_")
 		if len(normalized) > MaxNormalizedLen {
 			normalized = normalized[:MaxNormalizedLen]
 		}
@@ -475,12 +477,22 @@ func BuildDestImageID(registryHost, registryNamespace, sourceID string) string {
 
 	// If host is not empty
 	if registryNamespace == "" {
-		return fmt.Sprintf("%s/%s", registryHost, sourceID)
+		// Replace slashes, colons, dots, and hyphens with underscores to avoid issues with Docker image names
+		normalized := strings.ReplaceAll(sourceID, "/", "_")
+		normalized = strings.ReplaceAll(normalized, ":", "_")
+		normalized = strings.ReplaceAll(normalized, ".", "_")
+		normalized = strings.ReplaceAll(normalized, "-", "_")
+		if len(normalized) > MaxNormalizedLen {
+			normalized = normalized[:MaxNormalizedLen]
+		}
+		return fmt.Sprintf("%s/%s", registryHost, normalized)
 	}
 
 	// Host and namespace are both non-empty, normalize the source ID
 	normalized := strings.ReplaceAll(sourceID, "/", "_")
 	normalized = strings.ReplaceAll(normalized, ":", "_")
+	normalized = strings.ReplaceAll(normalized, ".", "_")
+	normalized = strings.ReplaceAll(normalized, "-", "_")
 	if len(normalized) > MaxNormalizedLen {
 		normalized = normalized[:MaxNormalizedLen]
 	}
