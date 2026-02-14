@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gaodengpan/image-copier/internal/utils"
 	"github.com/gaodengpan/image-copier/pkg/retry"
 	"github.com/sirupsen/logrus"
 )
@@ -52,6 +53,10 @@ type Puller struct {
 	MaxCacheSize    int // Maximum number of entries in the cache
 	refreshMutex    sync.Mutex // Mutex for preventing concurrent cache refreshes
 	ImageValidator  *ImageValidator // Validator for image names and credentials
+	// Validation cache fields
+	validationOnce    sync.Once       // Ensures validation runs only once
+	validationResult  error           // Stores the result of validation
+	validationChecked bool          // Tracks whether validation has been performed
 }
 
 // Config holds the configuration needed for Puller
@@ -346,6 +351,11 @@ func (p *Puller) notifyStage(stage PullStage, polls int) {
 
 // PullSingle pulls a single image through GitHub Actions
 func (p *Puller) PullSingle(ctx context.Context, imageID string) error {
+	// Run pre-pull validation first
+	if err := p.PrePullValidate(); err != nil {
+		return err
+	}
+
 	// Validate input to prevent command injection
 	if !p.ImageValidator.IsValidImageName(imageID) {
 		return fmt.Errorf("invalid image name: %s", sanitizeForLog(imageID))
@@ -805,4 +815,86 @@ func (p *Puller) copyAndImportImage(ctx context.Context, destImageID, sourceID s
 	}
 
 	return nil
+}
+
+// PrePullValidate checks if required commands and services are available before executing pull
+func (p *Puller) PrePullValidate() error {
+	var validationErrors []string
+
+	// Check if validation has already been performed
+	if p.validationChecked {
+		return p.validationResult
+	}
+
+	p.Logger.Debug("Performing pre-pull validation...")
+
+	// Perform validation only once
+	p.validationOnce.Do(func() {
+		// Check if skopeo command exists
+		skopeoExists, err := utils.CheckCommandExists(SkopeoCommand)
+		if err != nil {
+			p.Logger.Errorf("Error checking skopeo command: %v", err)
+			p.validationResult = fmt.Errorf("error checking skopeo command: %w", err)
+			return
+		}
+		if !skopeoExists {
+			validationErrors = append(validationErrors, fmt.Sprintf(
+				"skopeo command not found in PATH. Please install skopeo:\n"+
+					"- macOS: brew install skopeo\n"+
+					"- Ubuntu/Debian: sudo apt-get install skopeo\n"+
+					"- CentOS/RHEL: sudo yum install skopeo\n"+
+					"- Arch Linux: sudo pacman -S skopeo"))
+		} else {
+			p.Logger.Debug("Skopeo command found in PATH")
+		}
+
+		// Check if docker command exists
+		dockerExists, err := utils.CheckCommandExists(DockerCommand)
+		if err != nil {
+			p.Logger.Errorf("Error checking docker command: %v", err)
+			p.validationResult = fmt.Errorf("error checking docker command: %w", err)
+			return
+		}
+		if !dockerExists {
+			validationErrors = append(validationErrors, fmt.Sprintf(
+				"docker command not found in PATH. Please install Docker:\n"+
+					"- Visit https://docs.docker.com/get-docker/ for installation instructions"))
+		} else {
+			p.Logger.Debug("Docker command found in PATH")
+		}
+
+		// If both commands exist, check Docker service status
+		if skopeoExists && dockerExists {
+			dockerRunning, err := utils.CheckDockerService()
+			if err != nil {
+				p.Logger.Warnf("Docker service check resulted in error: %v", err)
+				validationErrors = append(validationErrors, fmt.Sprintf(
+					"Docker service is not running or accessible: %v\n"+
+						"- macOS/Linux: Start Docker Desktop or run 'sudo systemctl start docker'\n"+
+						"- Windows: Start Docker Desktop\n"+
+						"- Verify Docker works by running 'docker ps'", err))
+			} else if !dockerRunning {
+				p.Logger.Warn("Docker service is not running")
+				validationErrors = append(validationErrors, fmt.Sprintf(
+					"Docker service is not running:\n"+
+						"- macOS/Linux: Start Docker Desktop or run 'sudo systemctl start docker'\n"+
+						"- Windows: Start Docker Desktop\n"+
+						"- Verify Docker works by running 'docker ps'"))
+			} else {
+				p.Logger.Debug("Docker service is running")
+			}
+		}
+
+		// Store validation result
+		if len(validationErrors) > 0 {
+			p.validationResult = fmt.Errorf("validation failed:\n%s", strings.Join(validationErrors, "\n"))
+		} else {
+			p.validationResult = nil
+			p.Logger.Debug("Pre-pull validation passed")
+		}
+
+		p.validationChecked = true
+	})
+
+	return p.validationResult
 }
