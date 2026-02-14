@@ -466,5 +466,15 @@ func LoadWithConfigPath(configPath string) (*Config, error) {
 
 // DefaultConfigProvider returns a ConfigProvider with default configuration
 func DefaultConfigProvider() ConfigProvider {
+	return NewEncryptedViperConfigProvider()
+}
+
+// NewDefaultConfigProvider creates a new instance of the default config provider (encrypted)
+func NewDefaultConfigProvider() ConfigProvider {
+	return NewEncryptedViperConfigProvider()
+}
+
+// NewPlainConfigProvider creates a new instance of the plain config provider (non-encrypted)
+func NewPlainConfigProvider() ConfigProvider {
 	return NewViperConfigProvider()
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gaodengpan/image-copier/internal/encryption"
@@ -86,7 +87,7 @@ func (evp *EncryptedViperConfigProvider) decryptConfig(cfg *Config) (*Config, er
 	decryptedToken, err := decryptor.DecryptValue(cfg.Github.Token)
 	if err != nil {
 		return nil, &encryption.DecryptionError{
-			Message: "decryption failed, possibly due to incorrect key",
+			Message: "decryption failed, possibly due to incorrect key or corrupted data",
 			Field:   "github.token",
 			Cause:   err,
 		}
@@ -97,7 +98,7 @@ func (evp *EncryptedViperConfigProvider) decryptConfig(cfg *Config) (*Config, er
 	decryptedUsername, err := decryptor.DecryptValue(cfg.Registry.Username)
 	if err != nil {
 		return nil, &encryption.DecryptionError{
-			Message: "decryption failed, possibly due to incorrect key",
+			Message: "decryption failed, possibly due to incorrect key or corrupted data",
 			Field:   "registry.username",
 			Cause:   err,
 		}
@@ -108,7 +109,7 @@ func (evp *EncryptedViperConfigProvider) decryptConfig(cfg *Config) (*Config, er
 	decryptedPassword, err := decryptor.DecryptValue(cfg.Registry.Password)
 	if err != nil {
 		return nil, &encryption.DecryptionError{
-			Message: "decryption failed, possibly due to incorrect key",
+			Message: "decryption failed, possibly due to incorrect key or corrupted data",
 			Field:   "registry.password",
 			Cause:   err,
 		}
@@ -116,6 +117,30 @@ func (evp *EncryptedViperConfigProvider) decryptConfig(cfg *Config) (*Config, er
 	cfg.Registry.Password = decryptedPassword
 
 	return cfg, nil
+}
+
+// decryptIfEncrypted decrypts a value if it's encrypted, otherwise returns the original value
+func decryptIfEncrypted(value string) (string, error) {
+	if !strings.HasPrefix(value, "encrypted:") {
+		// Value is not encrypted, return as is
+		return value, nil
+	}
+
+	// Extract encrypted portion and decrypt
+	encryptedPart := strings.TrimPrefix(value, "encrypted:")
+
+	// Create a new decryptor each time to avoid any state issues
+	decryptor := encryption.NewConfigDecryptor()
+	decryptedValue, err := decryptor.DecryptValue(encryptedPart)
+	if err != nil {
+		return "", &encryption.DecryptionError{
+			Message: "decryption failed, possibly due to incorrect key or corrupted data",
+			Field:   value, // Provide more context about which field had the issue
+			Cause:   err,
+		}
+	}
+
+	return decryptedValue, nil
 }
 
 // LoadWithPaths loads configuration with specific paths for testing
@@ -187,6 +212,15 @@ func SafeLoadEncryptedConfig() (*Config, error) {
 	if err != nil {
 		// If it's a decryption error, provide additional guidance
 		if de, ok := err.(*encryption.DecryptionError); ok {
+			// Check if the error is due to missing encryption key
+			envKey := os.Getenv("ENCRYPT_KEY")
+			if envKey == "" {
+				// If the ENCRYPT_KEY is not set, try to load with a plain config provider
+				plainProvider := NewViperConfigProvider()
+				if plainCfg, plainErr := plainProvider.Load(); plainErr == nil {
+					return plainCfg, nil // Return plain config if decryption fails due to missing key
+				}
+			}
 			return nil, fmt.Errorf("%s - Please ensure the ENCRYPT_KEY environment variable is correctly set and matches the key used for encryption", de.Error())
 		}
 		return nil, err

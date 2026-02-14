@@ -353,7 +353,7 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *core.Config, tasks []syncT
 	// Create processor
 	processor := &SyncTasksProcessor{
 		logger: logger,
-		force:  true, // diff already confirmed sync needed
+		force:  force, // Use the original force flag from command line
 	}
 
 	// Execute with generic worker pool

@@ -174,12 +174,9 @@ func hasTagOrDigest(s string) bool {
 
 	// If exactly one colon (e.g., "name:tag")
 	if len(colonParts) == 2 {
-		// If the original string had multiple path segments (e.g., "repo/image:tag"),
-		// then treat the colon as part of the path, not as a tag separator
-		if len(parts) > 1 {
-			return false
-		}
-		// If it's just a simple "name:tag" without path segments, it's a tag format
+		// Even if there are multiple path segments, if the last segment has a colon,
+		// it should be treated as a tag unless it's a registry port (like "localhost:5000")
+		// The colon in the last segment indicates a tag, regardless of the number of path segments
 		return true
 	}
 
@@ -458,16 +455,65 @@ func NormalizeSourceID(imageID string) string {
 // BuildDestImageID constructs the destination registry image path from a
 // normalized source ID and registry configuration.
 func BuildDestImageID(registryHost, registryNamespace, sourceID string) string {
+	// Extract tag and digest before normalization to preserve them intact
+	var tag, digest, imageName string
+
+	// Find digest part (contains @)
+	digestIndex := strings.LastIndex(sourceID, "@")
+	if digestIndex != -1 {
+		digest = sourceID[digestIndex:] // includes @
+		imageName = sourceID[:digestIndex]
+	} else {
+		imageName = sourceID
+	}
+
+	// Find tag part (contains :)
+	if digestIndex == -1 {
+		tagIndex := strings.LastIndex(imageName, ":")
+		if tagIndex != -1 {
+			tag = imageName[tagIndex:] // includes :
+			imageName = imageName[:tagIndex]
+		}
+	} else {
+		// Check for tag in the part before digest
+		tagIndex := strings.LastIndex(imageName, ":")
+		if tagIndex != -1 {
+			tag = imageName[tagIndex:] // includes :
+			imageName = imageName[:tagIndex]
+		}
+	}
+
 	// If host is empty, always normalize the source ID to avoid path issues
 	if registryHost == "" {
-		// Replace slashes, colons, dots, and hyphens with underscores to avoid issues with Docker image names
-		normalized := strings.ReplaceAll(sourceID, "/", "_")
+		// Replace slashes, colons, and hyphens with underscores to avoid issues with Docker image names
+		normalized := strings.ReplaceAll(imageName, "/", "_")
 		normalized = strings.ReplaceAll(normalized, ":", "_")
 		normalized = strings.ReplaceAll(normalized, ".", "_")
 		normalized = strings.ReplaceAll(normalized, "-", "_")
-		if len(normalized) > MaxNormalizedLen {
-			normalized = normalized[:MaxNormalizedLen]
+
+		// Calculate max length accounting for tag and digest
+		maxBaseLen := MaxNormalizedLen
+		if tag != "" {
+			maxBaseLen -= len(tag)
 		}
+		if digest != "" {
+			maxBaseLen -= len(digest)
+		}
+
+		// Ensure maxBaseLen is not negative
+		if maxBaseLen < 0 {
+			maxBaseLen = 0
+		}
+
+		if len(normalized) > maxBaseLen {
+			normalized = normalized[:maxBaseLen]
+		}
+
+		// Remove trailing underscores to ensure valid Docker image name
+		normalized = strings.TrimRight(normalized, "_")
+
+		// Append tag and digest back
+		normalized = normalized + tag + digest
 
 		if registryNamespace == "" {
 			return fmt.Sprintf("/%s", normalized)
@@ -477,25 +523,68 @@ func BuildDestImageID(registryHost, registryNamespace, sourceID string) string {
 
 	// If host is not empty
 	if registryNamespace == "" {
-		// Replace slashes, colons, dots, and hyphens with underscores to avoid issues with Docker image names
-		normalized := strings.ReplaceAll(sourceID, "/", "_")
+		// Replace slashes, colons, and hyphens with underscores to avoid issues with Docker image names
+		normalized := strings.ReplaceAll(imageName, "/", "_")
 		normalized = strings.ReplaceAll(normalized, ":", "_")
 		normalized = strings.ReplaceAll(normalized, ".", "_")
 		normalized = strings.ReplaceAll(normalized, "-", "_")
-		if len(normalized) > MaxNormalizedLen {
-			normalized = normalized[:MaxNormalizedLen]
+
+		// Calculate max length accounting for tag and digest
+		maxBaseLen := MaxNormalizedLen
+		if tag != "" {
+			maxBaseLen -= len(tag)
 		}
+		if digest != "" {
+			maxBaseLen -= len(digest)
+		}
+
+		// Ensure maxBaseLen is not negative
+		if maxBaseLen < 0 {
+			maxBaseLen = 0
+		}
+
+		if len(normalized) > maxBaseLen {
+			normalized = normalized[:maxBaseLen]
+		}
+
+		// Remove trailing underscores to ensure valid Docker image name
+		normalized = strings.TrimRight(normalized, "_")
+
+		// Append tag and digest back
+		normalized = normalized + tag + digest
+
 		return fmt.Sprintf("%s/%s", registryHost, normalized)
 	}
 
 	// Host and namespace are both non-empty, normalize the source ID
-	normalized := strings.ReplaceAll(sourceID, "/", "_")
+	normalized := strings.ReplaceAll(imageName, "/", "_")
 	normalized = strings.ReplaceAll(normalized, ":", "_")
 	normalized = strings.ReplaceAll(normalized, ".", "_")
 	normalized = strings.ReplaceAll(normalized, "-", "_")
-	if len(normalized) > MaxNormalizedLen {
-		normalized = normalized[:MaxNormalizedLen]
+
+	// Calculate max length accounting for tag and digest
+	maxBaseLen := MaxNormalizedLen
+	if tag != "" {
+		maxBaseLen -= len(tag)
 	}
+	if digest != "" {
+		maxBaseLen -= len(digest)
+	}
+
+	// Ensure maxBaseLen is not negative
+	if maxBaseLen < 0 {
+		maxBaseLen = 0
+	}
+
+	if len(normalized) > maxBaseLen {
+		normalized = normalized[:maxBaseLen]
+	}
+
+	// Remove trailing underscores to ensure valid Docker image name
+	normalized = strings.TrimRight(normalized, "_")
+
+	// Append tag and digest back
+	normalized = normalized + tag + digest
 
 	return fmt.Sprintf("%s/%s/%s", registryHost, registryNamespace, normalized)
 }

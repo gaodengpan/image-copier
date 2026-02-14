@@ -34,7 +34,7 @@ func (p *SyncTasksProcessor) Process(ctx context.Context, task WorkerPoolTask[Sy
 	taskCfg := *task.Config
 	taskCfg.RegistryArch = task.Item.Arch
 	taskCfg.RegistryOs = task.Item.Os
-	taskCfg.Force = p.force // diff already confirmed sync needed
+	taskCfg.Force = p.force // Respect the force flag from processor
 
 	puller := core.NewPuller(&taskCfg, p.logger)
 

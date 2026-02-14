@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/gaodengpan/image-copier/internal/config"
+	"github.com/gaodengpan/image-copier/internal/encryption"
 )
 
 // ConfigData holds the configuration from the wizard
@@ -115,6 +116,12 @@ func RunWizard(ctx context.Context, skipExisting bool, provider config.ConfigPro
 
 // WriteConfigFile writes the configuration to a file
 func WriteConfigFile(data *ConfigData, path string) error {
+	// Encrypt sensitive fields before writing to file
+	encryptedData, err := encryptConfigData(data)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt config data: %w", err)
+	}
+
 	// Write config file directly as YAML
 	content := fmt.Sprintf(`# GitHub Configuration
 github:
@@ -154,19 +161,71 @@ retry:
 # Logging Configuration
 log_level: "info"
 `,
-		data.GitHubOwner,
-		data.GitHubRepo,
-		data.GitHubToken,
-		data.GitHubWorkflowID,
-		data.RegistryHost,
-		data.RegistryUsername,
-		data.RegistryPassword,
-		data.RegistryNamespace,
-		data.RegistryArch,
-		data.RegistryOs,
+		encryptedData.GitHubOwner,
+		encryptedData.GitHubRepo,
+		encryptedData.GitHubToken,
+		encryptedData.GitHubWorkflowID,
+		encryptedData.RegistryHost,
+		encryptedData.RegistryUsername,
+		encryptedData.RegistryPassword,
+		encryptedData.RegistryNamespace,
+		encryptedData.RegistryArch,
+		encryptedData.RegistryOs,
 	)
 
 	return os.WriteFile(path, []byte(content), 0644)
+}
+
+// encryptConfigData encrypts sensitive fields in ConfigData
+func encryptConfigData(data *ConfigData) (*ConfigData, error) {
+	// Attempt to create config encryptor
+	encryptor, err := encryption.NewConfigEncryptor()
+	if err != nil {
+		// If encryption key is not available, return the original data unchanged
+		// This allows the configuration to still be written even without encryption
+		return data, nil
+	}
+
+	// Create a copy of the config data to encrypt
+	encryptedData := &ConfigData{
+		GitHubOwner:      data.GitHubOwner,
+		GitHubRepo:       data.GitHubRepo,
+		GitHubToken:      data.GitHubToken,
+		GitHubWorkflowID: data.GitHubWorkflowID,
+		RegistryHost:     data.RegistryHost,
+		RegistryUsername: data.RegistryUsername,
+		RegistryPassword: data.RegistryPassword,
+		RegistryNamespace: data.RegistryNamespace,
+		RegistryArch:     data.RegistryArch,
+		RegistryOs:       data.RegistryOs,
+	}
+
+	// Encrypt sensitive fields if they're not already encrypted
+	if data.GitHubToken != "" && !strings.HasPrefix(data.GitHubToken, "encrypted:") {
+		encryptedToken, err := encryptor.EncryptValue(data.GitHubToken)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encrypt GitHub token: %w", err)
+		}
+		encryptedData.GitHubToken = encryptedToken
+	}
+
+	if data.RegistryUsername != "" && !strings.HasPrefix(data.RegistryUsername, "encrypted:") {
+		encryptedUsername, err := encryptor.EncryptValue(data.RegistryUsername)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encrypt registry username: %w", err)
+		}
+		encryptedData.RegistryUsername = encryptedUsername
+	}
+
+	if data.RegistryPassword != "" && !strings.HasPrefix(data.RegistryPassword, "encrypted:") {
+		encryptedPassword, err := encryptor.EncryptValue(data.RegistryPassword)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encrypt registry password: %w", err)
+		}
+		encryptedData.RegistryPassword = encryptedPassword
+	}
+
+	return encryptedData, nil
 }
 
 // promptString prompts for a string value
