@@ -23,8 +23,8 @@ type WorkItem interface {
 
 // WorkerPoolTask represents a task to be executed by the worker pool
 type WorkerPoolTask[T any] struct {
-	Index  int // Index in the original work slice
-	Item   T   // The actual work item to process
+	Index  int          // Index in the original work slice
+	Item   T            // The actual work item to process
 	Config *core.Config // Configuration for this task
 }
 

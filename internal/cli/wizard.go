@@ -188,16 +188,16 @@ func encryptConfigData(data *ConfigData) (*ConfigData, error) {
 
 	// Create a copy of the config data to encrypt
 	encryptedData := &ConfigData{
-		GitHubOwner:      data.GitHubOwner,
-		GitHubRepo:       data.GitHubRepo,
-		GitHubToken:      data.GitHubToken,
-		GitHubWorkflowID: data.GitHubWorkflowID,
-		RegistryHost:     data.RegistryHost,
-		RegistryUsername: data.RegistryUsername,
-		RegistryPassword: data.RegistryPassword,
+		GitHubOwner:       data.GitHubOwner,
+		GitHubRepo:        data.GitHubRepo,
+		GitHubToken:       data.GitHubToken,
+		GitHubWorkflowID:  data.GitHubWorkflowID,
+		RegistryHost:      data.RegistryHost,
+		RegistryUsername:  data.RegistryUsername,
+		RegistryPassword:  data.RegistryPassword,
 		RegistryNamespace: data.RegistryNamespace,
-		RegistryArch:     data.RegistryArch,
-		RegistryOs:       data.RegistryOs,
+		RegistryArch:      data.RegistryArch,
+		RegistryOs:        data.RegistryOs,
 	}
 
 	// Encrypt sensitive fields if they're not already encrypted

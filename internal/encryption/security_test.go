@@ -16,10 +16,10 @@ func TestEncryptionDecryptionRoundTrip(t *testing.T) {
 		"special chars: !@#$%^&*()",
 		"unicode: 你好世界 🌍",
 		"long text: this is a much longer text to test encryption with various content and ensure it works properly",
-		"",  // empty string
-		"1234567890",  // numbers
-		"ABCDEFGHIJKLMNOPQRSTUVWXYZ",  // uppercase
-		"abcdefghijklmnopqrstuvwxyz",  // lowercase
+		"",                           // empty string
+		"1234567890",                 // numbers
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZ", // uppercase
+		"abcdefghijklmnopqrstuvwxyz", // lowercase
 	}
 
 	for _, testValue := range testValues {

@@ -29,7 +29,6 @@ type PullCommandOptions struct {
 	Verbose     bool
 }
 
-
 // NewPullCommandWithConfigProvider creates a new pull command that accepts a ConfigProvider
 func NewPullCommandWithConfigProvider(configProvider config.ConfigProvider) *cobra.Command {
 	return NewPullCommandWithConfigProviderAndOptions(configProvider, PullCommandOptions{
@@ -52,7 +51,7 @@ func NewPullCommandWithConfigProviderAndOptions(configProvider config.ConfigProv
 	cmd := &cobra.Command{
 		Use:   "pull [IMAGE...]",
 		Short: "Pull images through GitHub Actions",
-		Long:  `Pull one or more images by routing them through GitHub Actions when direct pulling is not possible.
+		Long: `Pull one or more images by routing them through GitHub Actions when direct pulling is not possible.
 
 Supports two modes:
 1. Command-line mode: Specify images directly as arguments
@@ -134,7 +133,6 @@ Supports two modes:
 
 	return cmd
 }
-
 
 // processImagesWithProgress processes images with a progress bar and worker pool.
 func processImagesWithProgress(logger *logrus.Logger, pullerCfg *core.Config, images []string, workerCount int, verbose bool, ctx context.Context) error {
@@ -252,7 +250,7 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *core.Config, tasks []syncT
 	fmt.Printf("Checking %d image(s) against destination registry...\n", len(tasks))
 
 	type diffResult struct {
-		task        syncTask
+		task         syncTask
 		remoteExists bool
 		localExists  bool
 	}

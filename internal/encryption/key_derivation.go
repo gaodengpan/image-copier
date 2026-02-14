@@ -2,6 +2,7 @@ package encryption
 
 import (
 	"crypto/sha256"
+
 	"golang.org/x/crypto/pbkdf2"
 )
 

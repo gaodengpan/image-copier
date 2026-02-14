@@ -38,10 +38,10 @@ func TestEncryptDecrypt(t *testing.T) {
 
 func TestDecryptInvalidFormat(t *testing.T) {
 	invalidFormats := []string{
-		"",                    // Empty string
-		"encrypted",         // No colon
-		"encrypted:",        // No data
-		"encrypt:test",      // Wrong prefix
+		"",                            // Empty string
+		"encrypted",                   // No colon
+		"encrypted:",                  // No data
+		"encrypt:test",                // Wrong prefix
 		"encrypted:invalid_base64!@#", // Invalid base64
 	}
 

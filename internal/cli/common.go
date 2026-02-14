@@ -57,19 +57,19 @@ func CreateStageCallback(progressMgr *progress.Progress, workerIdx int, label st
 // CreateCoreConfigFromConfig converts config.Config to core.Config
 func CreateCoreConfigFromConfig(cfg *config.Config, force bool, dryRun bool) *core.Config {
 	return &core.Config{
-		GithubOwner:      cfg.Github.Owner,
-		GithubRepo:       cfg.Github.Repo,
-		GithubToken:      cfg.Github.Token,
-		GithubWorkflowID: cfg.Github.WorkflowID,
-		RegistryHost:     cfg.Registry.Host,
-		RegistryUsername: cfg.Registry.Username,
-		RegistryPassword: cfg.Registry.Password,
+		GithubOwner:       cfg.Github.Owner,
+		GithubRepo:        cfg.Github.Repo,
+		GithubToken:       cfg.Github.Token,
+		GithubWorkflowID:  cfg.Github.WorkflowID,
+		RegistryHost:      cfg.Registry.Host,
+		RegistryUsername:  cfg.Registry.Username,
+		RegistryPassword:  cfg.Registry.Password,
 		RegistryNamespace: cfg.Registry.Namespace,
-		RegistryArch:     cfg.Registry.Arch,
-		RegistryOs:       cfg.Registry.Os,
-		Force:            force,
-		RetryConfig:      cfg.ParseRetryConfig(),
-		DryRun:           dryRun,
+		RegistryArch:      cfg.Registry.Arch,
+		RegistryOs:        cfg.Registry.Os,
+		Force:             force,
+		RetryConfig:       cfg.ParseRetryConfig(),
+		DryRun:            dryRun,
 	}
 }
 

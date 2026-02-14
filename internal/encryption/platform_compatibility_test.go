@@ -19,7 +19,7 @@ func TestCrossPlatformCompatibility(t *testing.T) {
 		"special chars: !@#$%^&*()_+-=[]{}|;:,.<>?",
 		"unicode: 你好世界 🌍",
 		"long text: This is a longer text to test encryption with various lengths and content.",
-		"", // edge case: empty string
+		"",       // edge case: empty string
 		"single", // edge case: single word
 	}
 

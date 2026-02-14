@@ -230,10 +230,10 @@ func looksLikeMistypedImageTag(s string) bool {
 		// Check for common tag indicators that might be concatenated
 		remaining := s[i:]
 		if strings.HasPrefix(strings.ToLower(remaining), "latest") ||
-		   strings.HasPrefix(strings.ToLower(remaining), "alpine") ||
-		   strings.HasPrefix(strings.ToLower(remaining), "dev") ||
-		   strings.HasPrefix(strings.ToLower(remaining), "prod") ||
-		   strings.HasPrefix(strings.ToLower(remaining), "test") {
+			strings.HasPrefix(strings.ToLower(remaining), "alpine") ||
+			strings.HasPrefix(strings.ToLower(remaining), "dev") ||
+			strings.HasPrefix(strings.ToLower(remaining), "prod") ||
+			strings.HasPrefix(strings.ToLower(remaining), "test") {
 			// If we find something that looks like a tag at the end
 			// and it's preceded by something that might be an image name
 			if i > 2 { // At least a few characters for the "image" part

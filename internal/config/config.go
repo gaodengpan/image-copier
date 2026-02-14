@@ -351,7 +351,6 @@ type ViperConfigProvider struct {
 	viper *viper.Viper
 }
 
-
 // NewViperConfigProvider creates a new instance of ViperConfigProvider
 func NewViperConfigProvider() *ViperConfigProvider {
 	v := viper.New()
@@ -456,7 +455,6 @@ func (vp *ViperConfigProvider) GetConfigPath() string {
 	}
 	return ""
 }
-
 
 // LoadWithConfigPath loads configuration from a specific file path
 func LoadWithConfigPath(configPath string) (*Config, error) {

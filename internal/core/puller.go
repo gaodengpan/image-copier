@@ -122,7 +122,7 @@ func executeSkopeoCopy(ctx context.Context, skopeoCmd, creds, destImageID, tmpPa
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%s: %s, output: %s", ErrCommandFailed, err, string(output))
+		return fmt.Errorf("%s: %s, output: %s", "command failed", err, string(output))
 	}
 	return nil
 }
@@ -135,7 +135,7 @@ func executeDockerLoad(ctx context.Context, dockerCmd, tmpPath string) error {
 	cmd := exec.CommandContext(loadCtx, dockerCmd, "load", "-i", tmpPath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%s: %s, output: %s", ErrCommandFailed, err, string(output))
+		return fmt.Errorf("%s: %s, output: %s", "command failed", err, string(output))
 	}
 	return nil
 }
@@ -188,7 +188,7 @@ func hasTagOrDigest(s string) bool {
 func (p *Puller) CheckLocalImageExists(ctx context.Context, imageID string) (bool, error) {
 	// Validate input to prevent command injection
 	if !p.ImageValidator.IsValidImageName(imageID) {
-		return false, fmt.Errorf("%s: %s", ErrInvalidImageName, sanitizeForLog(imageID))
+		return false, fmt.Errorf("%s: %s", "invalid image name", sanitizeForLog(imageID))
 	}
 
 	// Check if the exact imageID exists in cache
@@ -228,7 +228,7 @@ func (p *Puller) CheckLocalImageExists(ctx context.Context, imageID string) (boo
 func (p *Puller) checkLocalImageWithCacheRefreshAndAliases(ctx context.Context, originalID, normalizedID string) (bool, error) {
 	// Validate input to prevent command injection
 	if !p.ImageValidator.IsValidImageName(originalID) {
-		return false, fmt.Errorf("%s: %s", ErrInvalidImageName, sanitizeForLog(originalID))
+		return false, fmt.Errorf("%s: %s", "invalid image name", sanitizeForLog(originalID))
 	}
 
 	// Use refreshMutex to prevent multiple goroutines from refreshing cache simultaneously
@@ -296,7 +296,7 @@ func (p *Puller) checkLocalImageWithCacheRefreshAndAliases(ctx context.Context, 
 func (p *Puller) checkLocalImageWithCacheRefresh(ctx context.Context, imageID string) (bool, error) {
 	// Validate input to prevent command injection
 	if !p.ImageValidator.IsValidImageName(imageID) {
-		return false, fmt.Errorf("%s: %s", ErrInvalidImageName, sanitizeForLog(imageID))
+		return false, fmt.Errorf("%s: %s", "invalid image name", sanitizeForLog(imageID))
 	}
 
 	// Use refreshMutex to prevent multiple goroutines from refreshing cache simultaneously
@@ -680,12 +680,12 @@ func CheckImageExists(ctx context.Context, destImageID, username, password strin
 	// Validate inputs to prevent command injection
 	validator := NewImageValidator() // Create a validator instance to use its validation methods
 	if !validator.IsValidImageName(destImageID) {
-		return false, fmt.Errorf("%s: %s", ErrInvalidImageName, sanitizeForLog(destImageID))
+		return false, fmt.Errorf("%s: %s", "invalid image name", sanitizeForLog(destImageID))
 	}
 
 	// Validate username and password to ensure they don't contain command injection chars
 	if !validator.ValidateCredentials(username, password) {
-		return false, fmt.Errorf(ErrInvalidCredentials)
+		return false, fmt.Errorf("invalid credentials")
 	}
 
 	creds := fmt.Sprintf("%s%s%s", username, CredentialsSeparator, password)
@@ -958,10 +958,10 @@ func (p *Puller) waitForWorkflow(ctx context.Context, runID string) error {
 func (p *Puller) copyAndImportImage(ctx context.Context, destImageID, sourceID string) error {
 	// Validate inputs to prevent command injection
 	if !p.ImageValidator.IsValidImageName(destImageID) {
-		return fmt.Errorf("%s: %s", ErrInvalidImageName, sanitizeForLog(destImageID))
+		return fmt.Errorf("%s: %s", "invalid image name", sanitizeForLog(destImageID))
 	}
 	if !p.ImageValidator.IsValidImageName(sourceID) {
-		return fmt.Errorf("%s: %s", ErrInvalidImageName, sanitizeForLog(sourceID))
+		return fmt.Errorf("%s: %s", "invalid image name", sanitizeForLog(sourceID))
 	}
 
 	// Create temporary file
@@ -984,7 +984,7 @@ func (p *Puller) copyAndImportImage(ctx context.Context, destImageID, sourceID s
 	username := p.Config.RegistryUsername
 	password := p.Config.RegistryPassword
 	if !p.ImageValidator.ValidateCredentials(username, password) {
-		return fmt.Errorf(ErrInvalidCredentials)
+		return fmt.Errorf("invalid credentials")
 	}
 
 	creds := fmt.Sprintf("%s%s%s", username, CredentialsSeparator, password)

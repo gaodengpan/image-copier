@@ -12,10 +12,10 @@ const (
 
 // Command constants
 const (
-	DockerCommand         = "docker"
-	SkopeoCommand         = "skopeo"
-	DockerImageFormat     = "{{.Repository}}:{{.Tag}}"
-	CredentialsSeparator  = ":"
+	DockerCommand        = "docker"
+	SkopeoCommand        = "skopeo"
+	DockerImageFormat    = "{{.Repository}}:{{.Tag}}"
+	CredentialsSeparator = ":"
 )
 
 // GitHub API constants
@@ -38,13 +38,6 @@ const (
 	ImageValidationPattern = `^[a-zA-Z0-9._-]+(/[a-zA-Z0-9._-]+)*(:[a-zA-Z0-9._-]+)?(@[a-zA-Z0-9._:-]+)?$|^([a-zA-Z0-9._-]+:[0-9]+/[a-zA-Z0-9._-]+(/[a-zA-Z0-9._-]+)*)(:[a-zA-Z0-9._-]+)?(@[a-zA-Z0-9._:-]+)?$`
 	ValidShellChars        = "$`\"'\\;&|()<>()[]{}"
 	PathTraversalChars     = "../ ..\\ /.. \\.."
-)
-
-// Error messages
-const (
-	ErrInvalidImageName   = "invalid image name"
-	ErrInvalidCredentials = "invalid credentials"
-	ErrCommandFailed      = "command failed"
 )
 
 // Sanitization

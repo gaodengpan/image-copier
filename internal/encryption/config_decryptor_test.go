@@ -50,9 +50,9 @@ func TestConfigDecryptorInvalidValue(t *testing.T) {
 
 	// Test with non-encrypted values - these should return as-is, not error
 	nonEncryptedValues := []string{
-		"",                    // Empty string
-		"normal text",        // Regular text
-		"encrypt:test",       // Text starting with encrypt but not encrypted:
+		"",             // Empty string
+		"normal text",  // Regular text
+		"encrypt:test", // Text starting with encrypt but not encrypted:
 	}
 
 	for _, value := range nonEncryptedValues {
@@ -67,8 +67,8 @@ func TestConfigDecryptorInvalidValue(t *testing.T) {
 
 	// Now test with properly prefixed but invalid encrypted values - these should error
 	invalidEncryptedFormats := []string{
-		"encrypted:",                       // No data after prefix
-		"encrypted:invalid_base64!@#",      // Invalid base64 after prefix
+		"encrypted:",                  // No data after prefix
+		"encrypted:invalid_base64!@#", // Invalid base64 after prefix
 	}
 
 	for _, value := range invalidEncryptedFormats {

@@ -125,7 +125,7 @@ func newTestPullerWithLogHook(cfg *Config) (*Puller, *TestLogHook) {
 func CaptureLogsWithBuffer(fn func()) string {
 	buffer := &bytes.Buffer{}
 	log.SetOutput(io.MultiWriter(buffer, log.Writer())) // Also write to original output
-	defer log.SetOutput(log.Writer()) // Restore original output
+	defer log.SetOutput(log.Writer())                   // Restore original output
 
 	fn()
 

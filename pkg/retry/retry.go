@@ -57,9 +57,9 @@ func IsAuthError(err error) bool {
 	}
 	errStr := err.Error()
 	return strings.Contains(errStr, "authentication") ||
-		   strings.Contains(errStr, "unauthorized") ||
-		   strings.Contains(errStr, "401") ||
-		   strings.Contains(errStr, "403")
+		strings.Contains(errStr, "unauthorized") ||
+		strings.Contains(errStr, "401") ||
+		strings.Contains(errStr, "403")
 }
 
 // IsNotFoundError checks if an error indicates that a resource was not found
@@ -69,7 +69,7 @@ func IsNotFoundError(err error) bool {
 	}
 	errStr := err.Error()
 	return strings.Contains(errStr, "not found") ||
-		   strings.Contains(errStr, "404")
+		strings.Contains(errStr, "404")
 }
 
 // Retry executes a function with exponential backoff retry

@@ -151,8 +151,8 @@ func TestBatchDecryptionWithErrorHandling(t *testing.T) {
 	invalidEncrypted := "encrypted:invalid-base64-data!"
 
 	values := map[string]string{
-		"plain_field":  plainValue,
-		"valid_field":  validEncrypted,
+		"plain_field":   plainValue,
+		"valid_field":   validEncrypted,
 		"invalid_field": invalidEncrypted,
 	}
 
@@ -203,8 +203,8 @@ func TestValidateEncryptedValue(t *testing.T) {
 
 	// Test invalid prefixes
 	invalidValues := []string{
-		"not-encrypted:value",  // Wrong prefix
-		"",                     // Empty string
+		"not-encrypted:value", // Wrong prefix
+		"",                    // Empty string
 		"just-text",           // No prefix
 		"encrypted",           // Missing colon
 	}
