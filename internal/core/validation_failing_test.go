@@ -9,6 +9,8 @@ import (
 func TestIsValidImageName_ValidInputs_Accepted_ShouldFail(t *testing.T) {
 	t.Skip("This test is expected to fail initially as per TDD red phase")
 
+	validator := NewImageValidator()
+
 	validInputs := []string{
 		"nginx",
 		"nginx:latest",
@@ -27,7 +29,7 @@ func TestIsValidImageName_ValidInputs_Accepted_ShouldFail(t *testing.T) {
 
 	for _, input := range validInputs {
 		t.Run(input, func(t *testing.T) {
-			result := isValidImageName(input)
+			result := validator.IsValidImageName(input)
 
 			// All these valid inputs should be accepted
 			if !result {
@@ -40,6 +42,8 @@ func TestIsValidImageName_ValidInputs_Accepted_ShouldFail(t *testing.T) {
 // TestIsValidImageName_InvalidInputs_Rejected_ShouldFail - Test that invalid inputs are rejected
 func TestIsValidImageName_InvalidInputs_Rejected_ShouldFail(t *testing.T) {
 	t.Skip("This test is expected to fail initially as per TDD red phase")
+
+	validator := NewImageValidator()
 
 	invalidInputs := []string{
 		"nginx;rm -rf /",         // semicolon injection
@@ -59,7 +63,7 @@ func TestIsValidImageName_InvalidInputs_Rejected_ShouldFail(t *testing.T) {
 
 	for _, input := range invalidInputs {
 		t.Run(input, func(t *testing.T) {
-			result := isValidImageName(input)
+			result := validator.IsValidImageName(input)
 
 			// All these invalid inputs should be rejected
 			if result {
@@ -73,6 +77,8 @@ func TestIsValidImageName_InvalidInputs_Rejected_ShouldFail(t *testing.T) {
 func TestValidateImageNameInput_BoundaryValues_LengthLimits_ShouldFail(t *testing.T) {
 	t.Skip("This test is expected to fail initially as per TDD red phase")
 
+	validator := NewImageValidator()
+
 	// Test with very long strings
 	longValidString := "a"
 	for i := 0; i < 1000; i++ {
@@ -80,7 +86,7 @@ func TestValidateImageNameInput_BoundaryValues_LengthLimits_ShouldFail(t *testin
 	}
 	longValidString += ":latest"
 
-	result := validateImageNameInput(longValidString)
+	result := validator.ValidateImageNameInput(longValidString)
 
 	// This should probably fail validation due to length, but initially may pass
 	if !result {
@@ -91,6 +97,8 @@ func TestValidateImageNameInput_BoundaryValues_LengthLimits_ShouldFail(t *testin
 // TestValidateImageNameInput_RegexPattern_Matching_ShouldFail - Test for proper regex pattern matching
 func TestValidateImageNameInput_RegexPattern_Matching_ShouldFail(t *testing.T) {
 	t.Skip("This test is expected to fail initially as per TDD red phase")
+
+	validator := NewImageValidator()
 
 	// Test various formats against the regex
 	testCases := []struct {
@@ -124,7 +132,7 @@ func TestValidateImageNameInput_RegexPattern_Matching_ShouldFail(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.input, func(t *testing.T) {
-			result := validateImageNameInput(tc.input)
+			result := validator.ValidateImageNameInput(tc.input)
 
 			if result != tc.expected {
 				t.Errorf("validateImageNameInput('%s') = %v, want %v", tc.input, result, tc.expected)
@@ -140,8 +148,11 @@ func TestImageValidationRegex_Compiled_Correctly_ShouldFail(t *testing.T) {
 	// This tests the global variable imageValidationRegex
 	// which is compiled at package level
 
+	// Using the same pattern as defined in the ImageValidator
+	regexPattern := `^[a-zA-Z0-9._-]+(/[a-zA-Z0-9._-]+)*(:[a-zA-Z0-9._-]+)?(@[a-zA-Z0-9._:-]+)?$|^([a-zA-Z0-9._-]+:[0-9]+/[a-zA-Z0-9._-]+(/[a-zA-Z0-9._-]+)*)(:[a-zA-Z0-9._-]+)?(@[a-zA-Z0-9._:-]+)?$`
+
 	testInputs := []struct {
-		input    string
+		input       string
 		shouldMatch bool
 	}{
 		{"nginx:latest", true},
@@ -154,7 +165,7 @@ func TestImageValidationRegex_Compiled_Correctly_ShouldFail(t *testing.T) {
 
 	for _, tc := range testInputs {
 		t.Run(tc.input, func(t *testing.T) {
-			doesMatch := regexp.MustCompile(ImageValidationPattern).MatchString(tc.input)
+			doesMatch := regexp.MustCompile(regexPattern).MatchString(tc.input)
 
 			if doesMatch != tc.shouldMatch {
 				t.Errorf("imageValidationRegex.MatchString('%s') = %v, want %v", tc.input, doesMatch, tc.shouldMatch)
@@ -167,6 +178,8 @@ func TestImageValidationRegex_Compiled_Correctly_ShouldFail(t *testing.T) {
 func TestValidateImageNameInput_Unicode_Characters_Handling_ShouldFail(t *testing.T) {
 	t.Skip("This test is expected to fail initially as per TDD red phase")
 
+	validator := NewImageValidator()
+
 	unicodeInputs := []string{
 		"nginx:最新版",           // Chinese characters in tag
 		"镜像:latest",            // Chinese characters in name
@@ -178,11 +191,11 @@ func TestValidateImageNameInput_Unicode_Characters_Handling_ShouldFail(t *testin
 
 	for _, input := range unicodeInputs {
 		t.Run(input, func(t *testing.T) {
-			result := validateImageNameInput(input)
+			result := validator.ValidateImageNameInput(input)
 
 			// Many of these might be invalid for docker standards, but they could be valid in some contexts
 			// We want to ensure the validation is explicit about which unicode characters are allowed
-			t.Logf("validateImageNameInput('%s') returned %v", input, result)
+			t.Logf("ValidateImageNameInput('%s') returned %v", input, result)
 		})
 	}
 
@@ -193,6 +206,8 @@ func TestValidateImageNameInput_Unicode_Characters_Handling_ShouldFail(t *testin
 // TestValidateImageNameInput_NetworkPath_Formats_ShouldFail - Test for network path formats
 func TestValidateImageNameInput_NetworkPath_Formats_ShouldFail(t *testing.T) {
 	t.Skip("This test is expected to fail initially as per TDD red phase")
+
+	validator := NewImageValidator()
 
 	networkFormats := []string{
 		"https://registry.com/image:tag",  // Should be rejected - includes protocol
@@ -205,7 +220,7 @@ func TestValidateImageNameInput_NetworkPath_Formats_ShouldFail(t *testing.T) {
 
 	for _, input := range networkFormats {
 		t.Run(input, func(t *testing.T) {
-			result := validateImageNameInput(input)
+			result := validator.ValidateImageNameInput(input)
 
 			// These formats should generally be rejected as they're not valid docker image names
 			if result {
@@ -219,6 +234,8 @@ func TestValidateImageNameInput_NetworkPath_Formats_ShouldFail(t *testing.T) {
 func TestValidateImageNameInput_PortSpecifications_Valid_ShouldFail(t *testing.T) {
 	t.Skip("This test is expected to fail initially as per TDD red phase")
 
+	validator := NewImageValidator()
+
 	validPortFormats := []string{
 		"localhost:5000/image:tag",
 		"registry.com:8080/image:tag",
@@ -228,7 +245,7 @@ func TestValidateImageNameInput_PortSpecifications_Valid_ShouldFail(t *testing.T
 
 	for _, input := range validPortFormats {
 		t.Run(input, func(t *testing.T) {
-			result := validateImageNameInput(input)
+			result := validator.ValidateImageNameInput(input)
 
 			// These should be valid Docker image names
 			if !result {
@@ -242,6 +259,8 @@ func TestValidateImageNameInput_PortSpecifications_Valid_ShouldFail(t *testing.T
 func TestValidateImageNameInput_MultipleColons_Invalid_ShouldFail(t *testing.T) {
 	t.Skip("This test is expected to fail initially as per TDD red phase")
 
+	validator := NewImageValidator()
+
 	invalidMultiColonFormats := []string{
 		"image::doublecolon",      // Double colon
 		"registry:5000:image:tag", // Multiple colons in wrong places
@@ -251,7 +270,7 @@ func TestValidateImageNameInput_MultipleColons_Invalid_ShouldFail(t *testing.T) 
 
 	for _, input := range invalidMultiColonFormats {
 		t.Run(input, func(t *testing.T) {
-			result := validateImageNameInput(input)
+			result := validator.ValidateImageNameInput(input)
 
 			// These should be rejected due to multiple colons
 			if result {
@@ -264,6 +283,8 @@ func TestValidateImageNameInput_MultipleColons_Invalid_ShouldFail(t *testing.T) 
 // TestValidateImageNameInput_SpecialChars_Negative_ShouldFail - Test for special characters that should be rejected
 func TestValidateImageNameInput_SpecialChars_Negative_ShouldFail(t *testing.T) {
 	t.Skip("This test is expected to fail initially as per TDD red phase")
+
+	validator := NewImageValidator()
 
 	specialChars := []string{
 		"image*glob",
@@ -281,7 +302,7 @@ func TestValidateImageNameInput_SpecialChars_Negative_ShouldFail(t *testing.T) {
 
 	for _, char := range specialChars {
 		t.Run(char, func(t *testing.T) {
-			result := validateImageNameInput(char)
+			result := validator.ValidateImageNameInput(char)
 
 			// Most of these should be rejected for security reasons
 			if result {

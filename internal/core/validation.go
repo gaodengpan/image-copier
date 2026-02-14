@@ -16,7 +16,7 @@ type ImageValidator struct {
 // NewImageValidator creates a new validator instance using the same regex pattern
 func NewImageValidator() *ImageValidator {
 	return &ImageValidator{
-		imageValidationRegex: regexp.MustCompile(ImageValidationPattern), // Use the constant directly
+		imageValidationRegex: regexp.MustCompile(ImageValidationPattern), // Use the constant from constants.go
 	}
 }
 

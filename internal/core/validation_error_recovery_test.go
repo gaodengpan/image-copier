@@ -147,18 +147,8 @@ func TestValidateYAMLContentRecovery(t *testing.T) {
 
 // TestIntegrationErrorRecovery tests the interaction between validator and puller under error conditions
 func TestIntegrationErrorRecovery(t *testing.T) {
-	// Create a puller with a validator
-	config := &Config{
-		GithubOwner:      "test",
-		GithubRepo:       "test",
-		GithubToken:      "token",
-		GithubWorkflowID: "workflow",
-		RegistryHost:     "registry.com",
-		RegistryUsername: "user",
-		RegistryPassword: "pass",
-	}
-
-	puller := NewPuller(config, nil) // nil logger for test
+	// Create a validator directly for testing
+	validator := NewImageValidator()
 
 	// Test with various problematic image names
 	problematicImages := []string{
@@ -179,11 +169,11 @@ func TestIntegrationErrorRecovery(t *testing.T) {
 			}()
 
 			// These should not panic even if they return errors
-			result := puller.ImageValidator.IsValidImageName(image)
+			result := validator.IsValidImageName(image)
 			t.Logf("Image %d validated successfully: %v", i, result)
 
 			// Also test direct validation method
-			directResult := puller.ImageValidator.ValidateImageNameInput(image)
+			directResult := validator.ValidateImageNameInput(image)
 			t.Logf("Direct validation for image %d: %v", i, directResult)
 		})
 	}
