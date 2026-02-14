@@ -19,7 +19,7 @@ import (
 
 // Define constants - Updated to English comments
 const (
-	// Using constants from constants.go
+// Using constants from constants.go
 )
 
 // 正则 expression precompiled - removed as it's now in validation.go
@@ -50,13 +50,13 @@ type Puller struct {
 	LocalImageCache map[string]bool
 	CacheTimestamp  time.Time
 	cacheMutex      sync.RWMutex
-	MaxCacheSize    int // Maximum number of entries in the cache
-	refreshMutex    sync.Mutex // Mutex for preventing concurrent cache refreshes
+	MaxCacheSize    int             // Maximum number of entries in the cache
+	refreshMutex    sync.Mutex      // Mutex for preventing concurrent cache refreshes
 	ImageValidator  *ImageValidator // Validator for image names and credentials
 	// Validation cache fields
-	validationOnce    sync.Once       // Ensures validation runs only once
-	validationResult  error           // Stores the result of validation
-	validationChecked bool          // Tracks whether validation has been performed
+	validationOnce    sync.Once // Ensures validation runs only once
+	validationResult  error     // Stores the result of validation
+	validationChecked bool      // Tracks whether validation has been performed
 }
 
 // Config holds the configuration needed for Puller
@@ -157,7 +157,7 @@ func hasTagOrDigest(s string) bool {
 
 	// Get the last segment after splitting by '/'
 	parts := strings.Split(s, "/")
-	tailSegment := parts[len(parts)-1]  // Get the last part
+	tailSegment := parts[len(parts)-1] // Get the last part
 
 	// If tail segment contains @ (for digest), return true
 	if strings.Contains(tailSegment, "@") {
@@ -191,7 +191,7 @@ func (p *Puller) CheckLocalImageExists(ctx context.Context, imageID string) (boo
 		return false, fmt.Errorf("%s: %s", ErrInvalidImageName, sanitizeForLog(imageID))
 	}
 
-	// Check cache first
+	// Check if the exact imageID exists in cache
 	p.cacheMutex.RLock()
 	if cachedResult, exists := p.LocalImageCache[imageID]; exists {
 		// Check if cache is still valid (less than 30 seconds old)
@@ -202,8 +202,94 @@ func (p *Puller) CheckLocalImageExists(ctx context.Context, imageID string) (boo
 	}
 	p.cacheMutex.RUnlock()
 
-	// Need to refresh cache
-	return p.checkLocalImageWithCacheRefresh(ctx, imageID)
+	// Try to find image under various alias forms
+	// First check with the normalized form that matches Docker's canonical format
+	normalizedID := NormalizeSourceID(imageID)
+
+	// If the normalized ID is different from the original, check if either exists
+	if normalizedID != imageID {
+		// Check cache for the normalized ID
+		p.cacheMutex.RLock()
+		if cachedResult, exists := p.LocalImageCache[normalizedID]; exists {
+			if time.Since(p.CacheTimestamp) < DefaultCacheTTL {
+				p.cacheMutex.RUnlock()
+				return cachedResult, nil
+			}
+		}
+		p.cacheMutex.RUnlock()
+	}
+
+	// Need to refresh cache and check both forms
+	return p.checkLocalImageWithCacheRefreshAndAliases(ctx, imageID, normalizedID)
+}
+
+// checkLocalImageWithCacheRefreshAndAliases performs the actual check and refreshes the cache if needed
+// It checks for image existence considering both the original and normalized image names
+func (p *Puller) checkLocalImageWithCacheRefreshAndAliases(ctx context.Context, originalID, normalizedID string) (bool, error) {
+	// Validate input to prevent command injection
+	if !p.ImageValidator.IsValidImageName(originalID) {
+		return false, fmt.Errorf("%s: %s", ErrInvalidImageName, sanitizeForLog(originalID))
+	}
+
+	// Use refreshMutex to prevent multiple goroutines from refreshing cache simultaneously
+	p.refreshMutex.Lock()
+	defer p.refreshMutex.Unlock()
+
+	// Double-check condition after acquiring write lock
+	p.cacheMutex.Lock()
+	needsRefresh := time.Since(p.CacheTimestamp) >= DefaultCacheTTL ||
+		len(p.LocalImageCache) == 0 ||
+		len(p.LocalImageCache) >= p.MaxCacheSize // Check if cache is too large
+	p.cacheMutex.Unlock()
+
+	if needsRefresh {
+		// Refresh the entire cache
+		allImages, err := p.getAllLocalImages(ctx)
+		if err != nil {
+			p.Logger.Warnf("Failed to refresh local image cache: %v", err)
+
+			// Fallback to individual check if unable to refresh cache
+			// Use context with timeout to prevent hanging
+			ctx, cancel := context.WithTimeout(ctx, CheckLocalTimeout)
+			defer cancel()
+
+			// Check for original ID first
+			cmd := exec.CommandContext(ctx, DockerCommand, "image", "inspect", originalID)
+			cmd.Stdout = nil
+			cmd.Stderr = nil
+			err := cmd.Run()
+			if err == nil {
+				return true, nil
+			}
+
+			// If original ID not found, check for normalized ID
+			cmd = exec.CommandContext(ctx, DockerCommand, "image", "inspect", normalizedID)
+			cmd.Stdout = nil
+			cmd.Stderr = nil
+			err = cmd.Run()
+			if err == nil {
+				return true, nil
+			}
+
+			// Both checks failed
+			return false, fmt.Errorf("primary cache refresh failed (%w), fallback individual check also failed", err)
+		}
+
+		// Update the cache with refreshed data
+		p.cacheMutex.Lock()
+		p.LocalImageCache = allImages
+		p.CacheTimestamp = time.Now()
+		p.cacheMutex.Unlock()
+	}
+
+	// Now check the cached result for both the original and normalized forms
+	p.cacheMutex.RLock()
+	originalExists := p.LocalImageCache[originalID]
+	normalizedExists := p.LocalImageCache[normalizedID]
+	p.cacheMutex.RUnlock()
+
+	// If either form exists in the cache, return true
+	return originalExists || normalizedExists, nil
 }
 
 // checkLocalImageWithCacheRefresh performs the actual check and refreshes the cache if needed
@@ -366,7 +452,7 @@ func (p *Puller) PullSingle(ctx context.Context, imageID string) error {
 	// Check if image already exists in the local Docker daemon
 	p.notifyStage(StageCheckLocal, 0)
 	if !p.Config.Force {
-		localExists, err := p.CheckLocalImageExists(ctx, sourceID)
+		localExists, err := p.CheckLocalImageExists(ctx, imageID)
 		if err != nil {
 			// Log the error from CheckLocalImageExists to prevent silent failures
 			p.Logger.Errorf("Error checking local image: %v", err)

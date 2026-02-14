@@ -274,7 +274,7 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *core.Config, tasks []syncT
 			sourceID := core.NormalizeSourceID(task.Source)
 			destID := core.BuildDestImageID(baseCfg.RegistryHost, baseCfg.RegistryNamespace, sourceID)
 			remoteExists, _ := core.CheckImageExists(ctx, destID, baseCfg.RegistryUsername, baseCfg.RegistryPassword)
-			localExists, _ := localChecker.CheckLocalImageExists(ctx, sourceID)
+			localExists, _ := localChecker.CheckLocalImageExists(ctx, task.Source)
 			results[idx] = diffResult{task: task, remoteExists: remoteExists, localExists: localExists}
 		}(i, t)
 	}
