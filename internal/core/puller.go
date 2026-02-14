@@ -144,9 +144,42 @@ func normalizeImageSegment(segment string) string {
 	return segment
 }
 
-// hasTagOrDigest checks if a string contains a tag or digest
+// hasTagOrDigest checks if the tail segment of a string contains a tag or digest
 func hasTagOrDigest(s string) bool {
-	return strings.Contains(s, ":") || strings.Contains(s, "@")
+	if s == "" {
+		return false
+	}
+
+	// Get the last segment after splitting by '/'
+	parts := strings.Split(s, "/")
+	tailSegment := parts[len(parts)-1]  // Get the last part
+
+	// If tail segment contains @ (for digest), return true
+	if strings.Contains(tailSegment, "@") {
+		return true
+	}
+
+	// Split the tail segment by ':' to analyze the format
+	colonParts := strings.Split(tailSegment, ":")
+
+	// If more than one colon (e.g., "name:tag:something"), likely a tag format, return true
+	if len(colonParts) > 2 {
+		return true
+	}
+
+	// If exactly one colon (e.g., "name:tag")
+	if len(colonParts) == 2 {
+		// If the original string had multiple path segments (e.g., "repo/image:tag"),
+		// then treat the colon as part of the path, not as a tag separator
+		if len(parts) > 1 {
+			return false
+		}
+		// If it's just a simple "name:tag" without path segments, it's a tag format
+		return true
+	}
+
+	// No colon found
+	return false
 }
 
 // CheckLocalImageExists checks whether the given image is available in the local Docker daemon.
@@ -415,12 +448,29 @@ func NormalizeSourceID(imageID string) string {
 // BuildDestImageID constructs the destination registry image path from a
 // normalized source ID and registry configuration.
 func BuildDestImageID(registryHost, registryNamespace, sourceID string) string {
+	// If host is empty, always normalize the source ID to avoid path issues
+	if registryHost == "" {
+		// Replace slashes and colons with underscores to avoid issues with file paths
+		normalized := strings.ReplaceAll(sourceID, "/", "_")
+		normalized = strings.ReplaceAll(normalized, ":", "_")
+		if len(normalized) > MaxNormalizedLen {
+			normalized = normalized[:MaxNormalizedLen]
+		}
+
+		if registryNamespace == "" {
+			return fmt.Sprintf("/%s", normalized)
+		}
+		return fmt.Sprintf("/%s/%s", registryNamespace, normalized)
+	}
+
+	// If host is not empty
 	if registryNamespace == "" {
 		return fmt.Sprintf("%s/%s", registryHost, sourceID)
 	}
 
-	// Replace slashes with underscores and limit length
+	// Host and namespace are both non-empty, normalize the source ID
 	normalized := strings.ReplaceAll(sourceID, "/", "_")
+	normalized = strings.ReplaceAll(normalized, ":", "_")
 	if len(normalized) > MaxNormalizedLen {
 		normalized = normalized[:MaxNormalizedLen]
 	}
