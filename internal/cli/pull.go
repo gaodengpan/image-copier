@@ -2,11 +2,15 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -89,6 +93,9 @@ Supports two modes:
 				osType = cfg.Registry.Os
 			}
 
+			baseCfg := CreateCoreConfigFromConfig(cfg, force, dryRun)
+			ctx := context.Background()
+
 			// === YAML manifest 模式（-f 参数）===
 			if filePath != "" {
 				tasks, err := readSyncManifest(filePath, arch, osType)
@@ -99,26 +106,29 @@ Supports two modes:
 					fmt.Println("No images found in manifest.")
 					return nil
 				}
-				baseCfg := CreateCoreConfigFromConfig(cfg, force, dryRun)
-				ctx := context.Background()
 				return processSyncTasks(logger, baseCfg, tasks, workerCount, force, dryRun, verbose, ctx)
 			}
 
 			// === 命令式模式（CLI 参数）===
-			pullerCfg := CreateCoreConfigFromConfig(cfg, force, dryRun)
 			// Override the arch and os with CLI flag values if they were specified
 			if arch != "" {
-				pullerCfg.RegistryArch = arch
+				baseCfg.RegistryArch = arch
 			}
 			if osType != "" {
-				pullerCfg.RegistryOs = osType
+				baseCfg.RegistryOs = osType
 			}
 
-			images := args
-			ctx := context.Background()
+			// Convert CLI args to syncTask format
+			tasks := make([]syncTask, len(args))
+			for i, img := range args {
+				tasks[i] = syncTask{
+					Source: img,
+					Arch:   baseCfg.RegistryArch,
+					Os:     baseCfg.RegistryOs,
+				}
+			}
 
-			// Unified progress bar display for all modes
-			return processImagesWithProgress(logger, pullerCfg, images, workerCount, verbose, ctx)
+			return processSyncTasks(logger, baseCfg, tasks, workerCount, force, dryRun, verbose, ctx)
 		},
 	}
 
@@ -134,57 +144,6 @@ Supports two modes:
 	cmd.SilenceUsage = true
 
 	return cmd
-}
-
-// processImagesWithProgress processes images with a progress bar and worker pool.
-func processImagesWithProgress(logger *logrus.Logger, pullerCfg *core.Config, images []string, workerCount int, verbose bool, ctx context.Context) error {
-	// Validate and optimize worker count
-	if workerCount < 1 {
-		workerCount = 1
-	}
-
-	// Adjust worker count based on number of images and CPU cores
-	maxFromImages := len(images)
-	if maxFromImages == 0 {
-		maxFromImages = 1
-	}
-
-	if workerCount > maxFromImages {
-		workerCount = maxFromImages
-	}
-
-	// Limit worker count by CPU cores to prevent excessive resource usage
-	maxWorkersByCPU := runtime.NumCPU()
-	if workerCount > maxWorkersByCPU {
-		logger.Debugf("Reducing worker count from %d to %d based on CPU cores", workerCount, maxWorkersByCPU)
-		workerCount = maxWorkersByCPU
-	}
-
-	// Create progress manager with pre-allocated worker bars
-	p := progress.NewProgress(len(images), workerCount)
-	for i, img := range images {
-		p.AddImage(i, img)
-	}
-
-	// Create tasks
-	tasks := make([]WorkerPoolTask[CLIImage], len(images))
-	for i, img := range images {
-		tasks[i] = WorkerPoolTask[CLIImage]{
-			Index:  i,
-			Item:   CLIImage{ImageID: img},
-			Config: pullerCfg,
-		}
-	}
-
-	// Create processor
-	processor := NewCLIImagesProcessor(logger)
-
-	// Execute with generic worker pool
-	failCount, err := GenericWorkerPool(logger, tasks, processor, p, workerCount, verbose, ctx)
-	if err != nil {
-		return fmt.Errorf("%d image(s) failed", failCount)
-	}
-	return nil
 }
 
 // SyncManifest represents the YAML manifest structure.
@@ -246,9 +205,10 @@ func readSyncManifest(path, defaultArch, defaultOs string) ([]syncTask, error) {
 func processSyncTasks(logger *logrus.Logger, baseCfg *core.Config, tasks []syncTask,
 	workerCount int, force, dryRun, verbose bool, ctx context.Context) error {
 
-	// === Phase 1: Diff ===
-	fmt.Printf("Checking %d image(s) against destination registry...\n", len(tasks))
+	presenter := NewCLIPresenter()
+	presenter.PresentCheckingImageCount(len(tasks))
 
+	// === Phase 1: Diff ===
 	type diffResult struct {
 		task         syncTask
 		remoteExists bool
@@ -291,21 +251,16 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *core.Config, tasks []syncT
 	}
 
 	// Report diff results
-	fmt.Printf("\n  ✓ %d already synced\n  → %d to sync\n\n", len(synced), len(needsSync))
+	presenter.PresentDiffSummary(len(synced), len(needsSync))
+
 	if dryRun {
-		for _, t := range synced {
-			fmt.Printf("  ✓ %s (synced)\n", t.displayName())
-		}
-		for _, r := range results {
-			if r.localExists && !force {
-				continue
-			}
-			if r.localExists && !r.remoteExists {
-				fmt.Printf("  → %s (in local, will sync to registry)\n", r.task.displayName())
-			} else {
-				fmt.Printf("  → %s (will sync)\n", r.task.displayName())
-			}
-		}
+		presenter.PresentDryRunResults(synced, needsSync)
+		presenter.PresentSummary(&PullSummary{
+			Succeeded: 0,
+			Skipped:   len(synced),
+			DryRun:    len(needsSync),
+			Failed:    0,
+		}, nil)
 		return nil
 	}
 
@@ -330,12 +285,25 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *core.Config, tasks []syncT
 		workerCount = maxWorkersByCPU
 	}
 
-	p := progress.NewProgress(len(needsSync), workerCount)
+	// Progress tracks all images (needsSync + synced) for unified summary display
+	totalCount := len(needsSync) + len(synced)
+	p := progress.NewProgress(totalCount, workerCount)
+
+	// Add needsSync images to progress
 	for i, t := range needsSync {
 		p.AddImage(i, t.displayName())
 	}
 
-	// Create tasks for the worker pool
+	// Add synced images to progress and mark as skipped
+	for i, t := range synced {
+		p.AddImage(len(needsSync)+i, t.displayName())
+		p.UpdateStatus(len(needsSync)+i, progress.StatusSkipped, nil)
+	}
+
+	// Set initial progress to the number of already synced images
+	p.SetInitialProgress(len(synced))
+
+	// Create tasks for the worker pool (only needsSync)
 	syncTasks := make([]WorkerPoolTask[SyncTask], len(needsSync))
 	for i, t := range needsSync {
 		syncTasks[i] = WorkerPoolTask[SyncTask]{
@@ -352,10 +320,97 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *core.Config, tasks []syncT
 	// Create processor
 	processor := NewSyncTasksProcessor(logger, force)
 
-	// Execute with generic worker pool
-	failCount, err := GenericWorkerPool(logger, syncTasks, processor, p, workerCount, verbose, ctx)
-	if err != nil {
+	// Execute with inline worker pool (skip progress.Wait() auto-summary)
+	startTime := time.Now()
+	var failCount int32 = 0
+
+	// Worker pool execution (inline to control summary output)
+	if len(syncTasks) > 0 {
+		// Route logger output based on verbose flag
+		if verbose {
+			logger.SetOutput(p.LogWriter())
+		} else {
+			logger.SetOutput(io.Discard)
+		}
+		defer logger.SetOutput(os.Stderr)
+
+		sem := make(chan struct{}, workerCount)
+		var wg sync.WaitGroup
+
+		for i := 0; i < workerCount; i++ {
+			wg.Add(1)
+			go func(workerIdx int) {
+				defer wg.Done()
+				for idx := 0; idx < len(syncTasks); idx++ {
+					select {
+					case <-ctx.Done():
+						return
+					default:
+					}
+
+					sem <- struct{}{}
+					p.UpdateStatus(idx, progress.StatusRunning, nil)
+					taskStart := time.Now()
+
+					err := processor.Process(ctx, syncTasks[idx], p, workerIdx)
+					elapsed := time.Since(taskStart)
+
+					if err != nil {
+						if errors.Is(err, core.ErrSkipped) {
+							p.UpdateStatus(idx, progress.StatusSkipped, nil)
+						} else if errors.Is(err, core.ErrDryRun) {
+							p.UpdateStatus(idx, progress.StatusDryRun, nil)
+						} else {
+							p.UpdateStatus(idx, progress.StatusFailed, err)
+							atomic.AddInt32(&failCount, 1)
+						}
+					} else {
+						p.UpdateStatus(idx, progress.StatusCompleted, nil)
+					}
+
+					p.SetDuration(idx, elapsed)
+					p.UpdateWorker(workerIdx, "")
+					p.Increment()
+					<-sem
+				}
+			}(i)
+		}
+		wg.Wait()
+	}
+
+	// Wait for progress bars to finish (without auto-summary)
+	p.AbortWorkers()
+	p.WaitContainer()
+
+	duration := time.Since(startTime)
+
+	// Build image results for summary
+	imageResults := make([]ImageResult, 0, totalCount)
+	for _, t := range needsSync {
+		imageResults = append(imageResults, ImageResult{
+			Image:   t.displayName(),
+			Success: true,
+		})
+	}
+	for _, t := range synced {
+		imageResults = append(imageResults, ImageResult{
+			Image:   t.displayName(),
+			Skipped: true,
+		})
+	}
+
+	// Present summary
+	presenter.PresentSummary(&PullSummary{
+		Succeeded: len(needsSync) - int(failCount),
+		Skipped:   len(synced),
+		DryRun:    0,
+		Failed:    int(failCount),
+		Duration:  duration,
+	}, imageResults)
+
+	if failCount > 0 {
 		return fmt.Errorf("%d image(s) failed to sync", failCount)
 	}
+
 	return nil
 }

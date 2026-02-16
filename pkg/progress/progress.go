@@ -246,6 +246,32 @@ func (p *Progress) Increment() {
 	p.mainBar.Increment()
 }
 
+// SetInitialProgress sets the initial completed count (for already-skipped items)
+func (p *Progress) SetInitialProgress(count int) {
+	p.mainBar.SetCurrent(int64(count))
+}
+
+// CompleteSkipped marks all images from index start as completed (for skipped items)
+func (p *Progress) CompleteSkipped(start int) {
+	for i := start; i < len(p.images); i++ {
+		if p.images[i] != nil {
+			p.mainBar.Increment()
+		}
+	}
+}
+
+// AbortWorkers aborts all worker bars without printing summary
+func (p *Progress) AbortWorkers() {
+	for _, bar := range p.workerBars {
+		bar.Abort(true)
+	}
+}
+
+// WaitContainer waits for the mpb render loop to finish
+func (p *Progress) WaitContainer() {
+	p.container.Wait()
+}
+
 // Wait waits for the mpb render loop to finish, then prints the summary
 func (p *Progress) Wait() {
 	for _, bar := range p.workerBars {

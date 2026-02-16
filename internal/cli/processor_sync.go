@@ -18,14 +18,17 @@ import (
 	"github.com/gaodengpan/image-copier/pkg/progress"
 )
 
-// SyncTask implements the WorkItem interface for sync task processing
+// SyncTask implements the WorkItem interface for image pull task processing
 type SyncTask struct {
-	Source string
-	Arch   string
-	Os     string
+	Source string // 镜像源地址 (如 redis:latest, ghcr.io/tektoncd/pipeline/controller:v1.1.0)
+	Arch   string // 架构 (如 amd64, arm64)
+	Os     string // 操作系统 (如 linux)
 }
 
 func (t SyncTask) DisplayName() string {
+	if t.Arch == "" && t.Os == "" {
+		return t.Source
+	}
 	return fmt.Sprintf("%s (%s/%s)", t.Source, t.Os, t.Arch)
 }
 

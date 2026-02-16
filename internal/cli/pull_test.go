@@ -1,14 +1,11 @@
 package cli
 
 import (
-	"context"
-	"io"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/gaodengpan/image-copier/internal/config"
-	"github.com/gaodengpan/image-copier/internal/core"
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -165,33 +162,6 @@ func TestArgsValidation(t *testing.T) {
 	assert.NotNil(t, cmd.Args)
 }
 
-// TestProcessImagesWithProgress tests the image processing function
-func TestProcessImagesWithProgress(t *testing.T) {
-	logger := logrus.New()
-	logger.SetOutput(io.Discard) // Suppress logs in tests
-
-	cfg := &core.Config{
-		GithubOwner:       "test-owner",
-		GithubRepo:        "test-repo",
-		GithubToken:       "test-token",
-		GithubWorkflowID:  "test-workflow",
-		RegistryHost:      "registry.example.com",
-		RegistryUsername:  "test-user",
-		RegistryPassword:  "test-pass",
-		RegistryNamespace: "test-namespace",
-		RegistryArch:      "amd64",
-		RegistryOs:        "linux",
-	}
-
-	images := []string{"nginx:latest", "redis:alpine"}
-	ctx := context.Background()
-
-	// This will fail because we don't have real Docker/skopeo, but that's expected
-	err := processImagesWithProgress(logger, cfg, images, 2, false, ctx)
-	// Expect an error because we don't have the required commands in the test environment
-	assert.Error(t, err)
-}
-
 // TestReadSyncManifest tests the YAML manifest reading function
 func TestReadSyncManifest(t *testing.T) {
 	// Create a temporary YAML file for testing
@@ -300,4 +270,113 @@ func TestPullCommandOptions(t *testing.T) {
 	assert.Equal(t, true, opts.Force)
 	assert.Equal(t, true, opts.DryRun)
 	assert.Equal(t, true, opts.Verbose)
+}
+
+func TestFormatPullSummary(t *testing.T) {
+	tests := []struct {
+		name     string
+		s        *PullSummary
+		expected string
+	}{
+		{
+			name: "normal case with duration",
+			s: &PullSummary{
+				Succeeded: 1,
+				Skipped:   2,
+				DryRun:    0,
+				Failed:    0,
+				Duration:  25 * time.Second,
+			},
+			expected: "Summary: 1 succeeded, 2 skipped, 0 failed | Total: 25s",
+		},
+		{
+			name: "with dry-run",
+			s: &PullSummary{
+				Succeeded: 0,
+				Skipped:   5,
+				DryRun:    3,
+				Failed:    0,
+				Duration:  0,
+			},
+			expected: "Summary: 0 succeeded, 5 skipped, 3 dry-run, 0 failed",
+		},
+		{
+			name: "with failure",
+			s: &PullSummary{
+				Succeeded: 2,
+				Skipped:   1,
+				DryRun:    0,
+				Failed:    1,
+				Duration:  10 * time.Second,
+			},
+			expected: "Summary: 2 succeeded, 1 skipped, 1 failed | Total: 10s",
+		},
+		{
+			name: "all zero without duration",
+			s: &PullSummary{
+				Succeeded: 0,
+				Skipped:   0,
+				DryRun:    0,
+				Failed:    0,
+				Duration:  0,
+			},
+			expected: "Summary: 0 succeeded, 0 skipped, 0 failed",
+		},
+		{
+			name: "minutes duration",
+			s: &PullSummary{
+				Succeeded: 5,
+				Skipped:   10,
+				DryRun:    0,
+				Failed:    0,
+				Duration:  2*time.Minute + 30*time.Second,
+			},
+			expected: "Summary: 5 succeeded, 10 skipped, 0 failed | Total: 2m30s",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := FormatPullSummary(tt.s)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestFormatImageResults(t *testing.T) {
+	tests := []struct {
+		name     string
+		results  []ImageResult
+		expected string
+	}{
+		{
+			name: "all succeeded",
+			results: []ImageResult{
+				{Image: "redis:latest", Success: true},
+				{Image: "nginx:latest", Success: true},
+			},
+			expected: "  ✓ redis:latest\n  ✓ nginx:latest\n",
+		},
+		{
+			name: "mixed results",
+			results: []ImageResult{
+				{Image: "redis:latest", Success: true},
+				{Image: "nginx:latest", Skipped: true},
+				{Image: "alpine:latest", Failed: true, Error: "connection refused"},
+			},
+			expected: "  ✓ redis:latest\n  ◦ nginx:latest\n  ✗ alpine:latest: connection refused\n",
+		},
+		{
+			name:     "empty results",
+			results:  []ImageResult{},
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := FormatImageResults(tt.results)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
 }
