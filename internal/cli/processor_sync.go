@@ -12,7 +12,6 @@ import (
 	"github.com/gaodengpan/image-copier/internal/adapters/filesystem"
 	"github.com/gaodengpan/image-copier/internal/adapters/github"
 	"github.com/gaodengpan/image-copier/internal/adapters/registry"
-	"github.com/gaodengpan/image-copier/internal/core"
 	"github.com/gaodengpan/image-copier/internal/ports"
 	"github.com/gaodengpan/image-copier/internal/use_cases"
 	"github.com/gaodengpan/image-copier/pkg/progress"
@@ -58,8 +57,8 @@ func NewSyncTasksProcessor(logger *logrus.Logger, force bool) *SyncTasksProcesso
 // Process handles a single sync task
 func (p *SyncTasksProcessor) Process(ctx context.Context, task WorkerPoolTask[SyncTask], progressMgr *progress.Progress, workerIdx int) error {
 	taskCfg := task.Config
-	taskCfg.RegistryArch = task.Item.Arch
-	taskCfg.RegistryOs = task.Item.Os
+	taskCfg.Registry.Arch = task.Item.Arch
+	taskCfg.Registry.Os = task.Item.Os
 	taskCfg.Force = p.force
 
 	startTime := time.Now()
@@ -106,21 +105,21 @@ func (p *SyncTasksProcessor) Process(ctx context.Context, task WorkerPoolTask[Sy
 		p.fileSystem,
 		p.httpClient,
 		p.logger,
-		taskCfg.GithubOwner,
-		taskCfg.GithubRepo,
-		taskCfg.GithubToken,
-		taskCfg.GithubWorkflowID,
+		taskCfg.Github.Owner,
+		taskCfg.Github.Repo,
+		taskCfg.Github.Token,
+		taskCfg.Github.WorkflowID,
 		stageCallback,
 	)
 
 	_, err := useCase.Execute(ctx, use_cases.PullSingleImageInput{
 		ImageID:      task.Item.Source,
-		RegistryHost: taskCfg.RegistryHost,
-		RegistryUser: taskCfg.RegistryUsername,
-		RegistryPass: taskCfg.RegistryPassword,
-		RegistryNS:   taskCfg.RegistryNamespace,
-		RegistryArch: taskCfg.RegistryArch,
-		RegistryOs:   taskCfg.RegistryOs,
+		RegistryHost: taskCfg.Registry.Host,
+		RegistryUser: taskCfg.Registry.Username,
+		RegistryPass: taskCfg.Registry.Password,
+		RegistryNS:   taskCfg.Registry.Namespace,
+		RegistryArch: taskCfg.Registry.Arch,
+		RegistryOs:   taskCfg.Registry.Os,
 		Force:        taskCfg.Force,
 		DryRun:       taskCfg.DryRun,
 	})
@@ -129,6 +128,6 @@ func (p *SyncTasksProcessor) Process(ctx context.Context, task WorkerPoolTask[Sy
 }
 
 // GetStageCallback returns a stage callback function
-func (p *SyncTasksProcessor) GetStageCallback(workerIdx int, label string, startTime time.Time) func(core.PullStage, int) {
+func (p *SyncTasksProcessor) GetStageCallback(workerIdx int, label string, startTime time.Time) func(use_cases.PullStage, int) {
 	return nil
 }

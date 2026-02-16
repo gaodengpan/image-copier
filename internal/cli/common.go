@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/gaodengpan/image-copier/internal/config"
-	"github.com/gaodengpan/image-copier/internal/core"
+	"github.com/gaodengpan/image-copier/internal/use_cases"
 	"github.com/gaodengpan/image-copier/pkg/logformat"
 	"github.com/gaodengpan/image-copier/pkg/progress"
 	"github.com/sirupsen/logrus"
@@ -30,12 +30,12 @@ func asymptotic(base, rangeSize float64, polls int) float64 {
 }
 
 // CreateStageCallback creates a shared stage callback function for updating progress
-func CreateStageCallback(progressMgr *progress.Progress, workerIdx int, label string, startTime time.Time) func(core.PullStage, int) {
-	return func(stage core.PullStage, polls int) {
+func CreateStageCallback(progressMgr *progress.Progress, workerIdx int, label string, startTime time.Time) func(use_cases.PullStage, int) {
+	return func(stage use_cases.PullStage, polls int) {
 		var pct float64
 		stageIdx := int(stage)
 
-		if stage == core.StageWaitWorkflow && polls > 0 {
+		if stage == use_cases.StageWaitWorkflow && polls > 0 {
 			// For workflow waiting, compute asymptotic progress
 			base := stageWeights[2]
 			ceiling := stageWeights[3]
@@ -54,23 +54,11 @@ func CreateStageCallback(progressMgr *progress.Progress, workerIdx int, label st
 	}
 }
 
-// CreateCoreConfigFromConfig converts config.Config to core.Config
-func CreateCoreConfigFromConfig(cfg *config.Config, force bool, dryRun bool) *core.Config {
-	return &core.Config{
-		GithubOwner:       cfg.Github.Owner,
-		GithubRepo:        cfg.Github.Repo,
-		GithubToken:       cfg.Github.Token,
-		GithubWorkflowID:  cfg.Github.WorkflowID,
-		RegistryHost:      cfg.Registry.Host,
-		RegistryUsername:  cfg.Registry.Username,
-		RegistryPassword:  cfg.Registry.Password,
-		RegistryNamespace: cfg.Registry.Namespace,
-		RegistryArch:      cfg.Registry.Arch,
-		RegistryOs:        cfg.Registry.Os,
-		Force:             force,
-		RetryConfig:       cfg.ParseRetryConfig(),
-		DryRun:            dryRun,
-	}
+// CreateCoreConfigFromConfig creates runtime config from loaded config
+func CreateCoreConfigFromConfig(cfg *config.Config, force bool, dryRun bool) *config.Config {
+	cfg.Force = force
+	cfg.DryRun = dryRun
+	return cfg
 }
 
 // SetupLogger sets up the logger based on config

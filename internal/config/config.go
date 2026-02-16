@@ -46,6 +46,8 @@ type Config struct {
 	} `mapstructure:"retry"`
 
 	LogLevel string `mapstructure:"log_level"`
+	Force    bool
+	DryRun   bool
 }
 
 // configDir returns the XDG-compliant configuration directory.

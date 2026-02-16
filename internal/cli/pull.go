@@ -19,7 +19,7 @@ import (
 	dockeradapter "github.com/gaodengpan/image-copier/internal/adapters/docker"
 	registryadapter "github.com/gaodengpan/image-copier/internal/adapters/registry"
 	"github.com/gaodengpan/image-copier/internal/config"
-	"github.com/gaodengpan/image-copier/internal/core"
+	"github.com/gaodengpan/image-copier/internal/use_cases"
 	"github.com/gaodengpan/image-copier/pkg/logformat"
 	"github.com/gaodengpan/image-copier/pkg/progress"
 )
@@ -112,10 +112,10 @@ Supports two modes:
 			// === 命令式模式（CLI 参数）===
 			// Override the arch and os with CLI flag values if they were specified
 			if arch != "" {
-				baseCfg.RegistryArch = arch
+				baseCfg.Registry.Arch = arch
 			}
 			if osType != "" {
-				baseCfg.RegistryOs = osType
+				baseCfg.Registry.Os = osType
 			}
 
 			// Convert CLI args to syncTask format
@@ -123,8 +123,8 @@ Supports two modes:
 			for i, img := range args {
 				tasks[i] = syncTask{
 					Source: img,
-					Arch:   baseCfg.RegistryArch,
-					Os:     baseCfg.RegistryOs,
+					Arch:   baseCfg.Registry.Arch,
+					Os:     baseCfg.Registry.Os,
 				}
 			}
 
@@ -202,7 +202,7 @@ func readSyncManifest(path, defaultArch, defaultOs string) ([]syncTask, error) {
 	return tasks, nil
 }
 
-func processSyncTasks(logger *logrus.Logger, baseCfg *core.Config, tasks []syncTask,
+func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syncTask,
 	workerCount int, force, dryRun, verbose bool, ctx context.Context) error {
 
 	presenter := NewCLIPresenter()
@@ -230,9 +230,9 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *core.Config, tasks []syncT
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			sourceID := core.NormalizeSourceID(task.Source)
-			destID := registryClient.BuildDestImageID(sourceID, baseCfg.RegistryHost, baseCfg.RegistryNamespace)
-			remoteExists, _ := registryClient.CheckImageExists(ctx, destID, baseCfg.RegistryUsername, baseCfg.RegistryPassword)
+			sourceID := task.Source
+			destID := registryClient.BuildDestImageID(sourceID, baseCfg.Registry.Host, baseCfg.Registry.Namespace)
+			remoteExists, _ := registryClient.CheckImageExists(ctx, destID, baseCfg.Registry.Username, baseCfg.Registry.Password)
 			localExists, _ := dockerClient.ImageExists(ctx, task.Source)
 			results[idx] = diffResult{task: task, remoteExists: remoteExists, localExists: localExists}
 		}(i, t)
@@ -356,9 +356,9 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *core.Config, tasks []syncT
 					elapsed := time.Since(taskStart)
 
 					if err != nil {
-						if errors.Is(err, core.ErrSkipped) {
+						if errors.Is(err, use_cases.ErrSkipped) {
 							p.UpdateStatus(idx, progress.StatusSkipped, nil)
-						} else if errors.Is(err, core.ErrDryRun) {
+						} else if errors.Is(err, use_cases.ErrDryRun) {
 							p.UpdateStatus(idx, progress.StatusDryRun, nil)
 						} else {
 							p.UpdateStatus(idx, progress.StatusFailed, err)

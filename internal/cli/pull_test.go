@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/gaodengpan/image-copier/internal/config"
-	"github.com/gaodengpan/image-copier/internal/core"
+	"github.com/gaodengpan/image-copier/internal/use_cases"
 	"github.com/gaodengpan/image-copier/pkg/progress"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
@@ -386,12 +386,12 @@ func TestFormatImageResults(t *testing.T) {
 
 func TestAsymptotic(t *testing.T) {
 	tests := []struct {
-		name       string
-		base       float64
-		rangeSize  float64
-		polls      int
-		wantMin    float64
-		wantMax    float64
+		name      string
+		base      float64
+		rangeSize float64
+		polls     int
+		wantMin   float64
+		wantMax   float64
 	}{
 		{
 			name:      "zero polls",
@@ -434,18 +434,18 @@ func TestCreateStageCallback(t *testing.T) {
 
 	callback := CreateStageCallback(progressMgr, 0, "test-image", startTime)
 
-	callback(core.PullStage(0), 0)
-	callback(core.StageCheckRegistry, 0)
-	callback(core.StageWaitWorkflow, 5)
+	callback(use_cases.PullStage(0), 0)
+	callback(use_cases.StageCheckRegistry, 0)
+	callback(use_cases.StageWaitWorkflow, 5)
 }
 
 func TestCreateCoreConfigFromConfig(t *testing.T) {
 	cfg := &config.Config{
 		Github: struct {
-			Owner      string "mapstructure:\"owner\""
-			Repo       string "mapstructure:\"repo\""
-			Token      string "mapstructure:\"token\""
-			WorkflowID string "mapstructure:\"workflow_id\""
+			Owner      string `mapstructure:"owner"`
+			Repo       string `mapstructure:"repo"`
+			Token      string `mapstructure:"token"`
+			WorkflowID string `mapstructure:"workflow_id"`
 		}{
 			Owner:      "owner",
 			Repo:       "repo",
@@ -453,12 +453,12 @@ func TestCreateCoreConfigFromConfig(t *testing.T) {
 			WorkflowID: "workflow.yaml",
 		},
 		Registry: struct {
-			Host      string "mapstructure:\"host\""
-			Username  string "mapstructure:\"username\""
-			Password  string "mapstructure:\"password\""
-			Namespace string "mapstructure:\"namespace\""
-			Arch      string "mapstructure:\"arch\""
-			Os        string "mapstructure:\"os\""
+			Host      string `mapstructure:"host"`
+			Username  string `mapstructure:"username"`
+			Password  string `mapstructure:"password"`
+			Namespace string `mapstructure:"namespace"`
+			Arch      string `mapstructure:"arch"`
+			Os        string `mapstructure:"os"`
 		}{
 			Host:      "registry.example.com",
 			Username:  "user",
@@ -470,20 +470,20 @@ func TestCreateCoreConfigFromConfig(t *testing.T) {
 		LogLevel: "info",
 	}
 
-	coreCfg := CreateCoreConfigFromConfig(cfg, true, true)
+	resultCfg := CreateCoreConfigFromConfig(cfg, true, true)
 
-	assert.Equal(t, "owner", coreCfg.GithubOwner)
-	assert.Equal(t, "repo", coreCfg.GithubRepo)
-	assert.Equal(t, "token", coreCfg.GithubToken)
-	assert.Equal(t, "workflow.yaml", coreCfg.GithubWorkflowID)
-	assert.Equal(t, "registry.example.com", coreCfg.RegistryHost)
-	assert.Equal(t, "user", coreCfg.RegistryUsername)
-	assert.Equal(t, "pass", coreCfg.RegistryPassword)
-	assert.Equal(t, "ns", coreCfg.RegistryNamespace)
-	assert.Equal(t, "amd64", coreCfg.RegistryArch)
-	assert.Equal(t, "linux", coreCfg.RegistryOs)
-	assert.Equal(t, true, coreCfg.Force)
-	assert.Equal(t, true, coreCfg.DryRun)
+	assert.Equal(t, "owner", resultCfg.Github.Owner)
+	assert.Equal(t, "repo", resultCfg.Github.Repo)
+	assert.Equal(t, "token", resultCfg.Github.Token)
+	assert.Equal(t, "workflow.yaml", resultCfg.Github.WorkflowID)
+	assert.Equal(t, "registry.example.com", resultCfg.Registry.Host)
+	assert.Equal(t, "user", resultCfg.Registry.Username)
+	assert.Equal(t, "pass", resultCfg.Registry.Password)
+	assert.Equal(t, "ns", resultCfg.Registry.Namespace)
+	assert.Equal(t, "amd64", resultCfg.Registry.Arch)
+	assert.Equal(t, "linux", resultCfg.Registry.Os)
+	assert.Equal(t, true, resultCfg.Force)
+	assert.Equal(t, true, resultCfg.DryRun)
 }
 
 func TestSetupLogger(t *testing.T) {
