@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
 
+	dockeradapter "github.com/gaodengpan/image-copier/internal/adapters/docker"
 	registryadapter "github.com/gaodengpan/image-copier/internal/adapters/registry"
 	"github.com/gaodengpan/image-copier/internal/config"
 	"github.com/gaodengpan/image-copier/internal/core"
@@ -176,9 +177,7 @@ func processImagesWithProgress(logger *logrus.Logger, pullerCfg *core.Config, im
 	}
 
 	// Create processor
-	processor := &CLIImagesProcessor{
-		logger: logger,
-	}
+	processor := NewCLIImagesProcessor(logger)
 
 	// Execute with generic worker pool
 	failCount, err := GenericWorkerPool(logger, tasks, processor, p, workerCount, verbose, ctx)
@@ -257,8 +256,8 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *core.Config, tasks []syncT
 	}
 	results := make([]diffResult, len(tasks))
 
-	// Create a temporary puller for local image checks
-	localChecker := NewPuller(baseCfg, logger)
+	// Create adapters for local and registry image checks
+	dockerClient := dockeradapter.NewExecDockerAdapter()
 	registryClient := registryadapter.NewSkopeoAdapter()
 
 	// Concurrent check (bounded by workerCount)
@@ -272,19 +271,19 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *core.Config, tasks []syncT
 			defer func() { <-sem }()
 
 			sourceID := core.NormalizeSourceID(task.Source)
-			destID := core.BuildDestImageID(baseCfg.RegistryHost, baseCfg.RegistryNamespace, sourceID)
+			destID := registryClient.BuildDestImageID(sourceID, baseCfg.RegistryHost, baseCfg.RegistryNamespace)
 			remoteExists, _ := registryClient.CheckImageExists(ctx, destID, baseCfg.RegistryUsername, baseCfg.RegistryPassword)
-			localExists, _ := localChecker.CheckLocalImageExists(ctx, task.Source)
+			localExists, _ := dockerClient.ImageExists(ctx, task.Source)
 			results[idx] = diffResult{task: task, remoteExists: remoteExists, localExists: localExists}
 		}(i, t)
 	}
 	wg.Wait()
 
 	// Partition: synced vs needsSync
-	// An image is fully synced only when it exists in BOTH the remote registry AND locally
+	// An image is synced if it exists locally (no need to pull from source)
 	var synced, needsSync []syncTask
 	for _, r := range results {
-		if r.remoteExists && r.localExists && !force {
+		if r.localExists && !force {
 			synced = append(synced, r.task)
 		} else {
 			needsSync = append(needsSync, r.task)
@@ -298,11 +297,11 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *core.Config, tasks []syncT
 			fmt.Printf("  ✓ %s (synced)\n", t.displayName())
 		}
 		for _, r := range results {
-			if r.remoteExists && r.localExists && !force {
+			if r.localExists && !force {
 				continue
 			}
-			if r.remoteExists && !r.localExists {
-				fmt.Printf("  → %s (in registry, will download to local)\n", r.task.displayName())
+			if r.localExists && !r.remoteExists {
+				fmt.Printf("  → %s (in local, will sync to registry)\n", r.task.displayName())
 			} else {
 				fmt.Printf("  → %s (will sync)\n", r.task.displayName())
 			}
@@ -351,10 +350,7 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *core.Config, tasks []syncT
 	}
 
 	// Create processor
-	processor := &SyncTasksProcessor{
-		logger: logger,
-		force:  force, // Use the original force flag from command line
-	}
+	processor := NewSyncTasksProcessor(logger, force)
 
 	// Execute with generic worker pool
 	failCount, err := GenericWorkerPool(logger, syncTasks, processor, p, workerCount, verbose, ctx)

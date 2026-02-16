@@ -40,6 +40,10 @@ func (m *mockRegistryClient) CheckImageExists(ctx context.Context, imageID, user
 	return false, nil
 }
 
+func (m *mockRegistryClient) BuildDestImageID(sourceID, registryHost, registryNamespace string) string {
+	return sourceID
+}
+
 type mockGitHubClient struct{}
 
 func (m *mockGitHubClient) TriggerWorkflow(ctx context.Context, owner, repo, workflowID string, inputs map[string]string) (string, error) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/gaodengpan/image-copier/internal/adapters/errors"
@@ -106,6 +107,107 @@ func (a *SkopeoAdapter) CheckImageExists(ctx context.Context, imageID, username,
 	}
 
 	return true, nil
+}
+
+func (a *SkopeoAdapter) BuildDestImageID(sourceID, registryHost, registryNamespace string) string {
+	var tag, digest, imageName string
+
+	digestIndex := strings.LastIndex(sourceID, "@")
+	if digestIndex != -1 {
+		digest = sourceID[digestIndex:]
+		imageName = sourceID[:digestIndex]
+	} else {
+		imageName = sourceID
+	}
+
+	if digestIndex == -1 {
+		tagIndex := strings.LastIndex(imageName, ":")
+		if tagIndex != -1 {
+			tag = imageName[tagIndex:]
+			imageName = imageName[:tagIndex]
+		}
+	} else {
+		tagIndex := strings.LastIndex(imageName, ":")
+		if tagIndex != -1 {
+			tag = imageName[tagIndex:]
+			imageName = imageName[:tagIndex]
+		}
+	}
+
+	if registryHost == "" {
+		normalized := strings.ReplaceAll(imageName, "/", "_")
+		normalized = strings.ReplaceAll(normalized, ":", "_")
+		normalized = strings.ReplaceAll(normalized, ".", "_")
+		normalized = strings.ReplaceAll(normalized, "-", "_")
+
+		const maxLen = 115
+		maxBaseLen := maxLen
+		if tag != "" {
+			maxBaseLen -= len(tag)
+		}
+		if digest != "" {
+			maxBaseLen -= len(digest)
+		}
+		if maxBaseLen < 0 {
+			maxBaseLen = 0
+		}
+		if len(normalized) > maxBaseLen {
+			normalized = normalized[:maxBaseLen]
+		}
+
+		normalized = normalized + tag + digest
+		return normalized
+	}
+
+	// When registryHost is not empty but registryNamespace is empty
+	if registryNamespace == "" {
+		normalized := strings.ReplaceAll(imageName, "/", "_")
+		normalized = strings.ReplaceAll(normalized, ".", "_")
+		normalized = strings.ReplaceAll(normalized, "-", "_")
+
+		const maxLen = 115
+		maxBaseLen := maxLen
+		if tag != "" {
+			maxBaseLen -= len(tag)
+		}
+		if digest != "" {
+			maxBaseLen -= len(digest)
+		}
+		if maxBaseLen < 0 {
+			maxBaseLen = 0
+		}
+		if len(normalized) > maxBaseLen {
+			normalized = normalized[:maxBaseLen]
+		}
+
+		normalized = strings.TrimRight(normalized, "_")
+		normalized = normalized + tag + digest
+		return fmt.Sprintf("%s/%s", registryHost, normalized)
+	}
+
+	// When both registryHost and registryNamespace are not empty
+	normalized := strings.ReplaceAll(imageName, "/", "_")
+	normalized = strings.ReplaceAll(normalized, ".", "_")
+	normalized = strings.ReplaceAll(normalized, "-", "_")
+
+	const maxLen = 115
+	maxBaseLen := maxLen
+	if tag != "" {
+		maxBaseLen -= len(tag)
+	}
+	if digest != "" {
+		maxBaseLen -= len(digest)
+	}
+	if maxBaseLen < 0 {
+		maxBaseLen = 0
+	}
+	if len(normalized) > maxBaseLen {
+		normalized = normalized[:maxBaseLen]
+	}
+
+	normalized = strings.TrimRight(normalized, "_")
+	normalized = normalized + tag + digest
+	return fmt.Sprintf("%s/%s/%s", registryHost, registryNamespace, normalized)
 }
 
 var _ ports.RegistryClient = (*SkopeoAdapter)(nil)
