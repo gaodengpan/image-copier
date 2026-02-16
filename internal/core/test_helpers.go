@@ -147,37 +147,6 @@ func (hook *TestLogHook) HasSensitiveInfo(secrets ...string) bool {
 	return false
 }
 
-// newTestPullerWithLogHook creates a puller with a log hook for testing
-func newTestPullerWithLogHook(cfg *Config) (*Puller, *TestLogHook) {
-	if cfg == nil {
-		cfg = &Config{
-			GithubOwner:       "owner",
-			GithubRepo:        "repo",
-			GithubToken:       "token",
-			GithubWorkflowID:  "workflow.yaml",
-			RegistryHost:      "registry.example.com",
-			RegistryUsername:  "user",
-			RegistryPassword:  "pass",
-			RegistryNamespace: "ns",
-			RegistryArch:      "amd64",
-			RegistryOs:        "linux",
-		}
-	}
-
-	logger := logrus.New()
-	logger.SetLevel(logrus.DebugLevel) // Capture all log levels
-
-	hook := &TestLogHook{}
-	logger.AddHook(hook)
-
-	dockerClient := &mockDockerClient{}
-	registryClient := &mockRegistryClient{}
-	githubClient := &mockGitHubClient{}
-	fs := &mockFileSystem{}
-
-	return NewPullerWithPorts(cfg, logger, dockerClient, registryClient, githubClient, fs), hook
-}
-
 // CaptureLogsWithBuffer runs a function and captures logs written with stdlib log
 func CaptureLogsWithBuffer(fn func()) string {
 	buffer := &bytes.Buffer{}

@@ -6,6 +6,9 @@ import (
 	"time"
 
 	"github.com/gaodengpan/image-copier/internal/config"
+	"github.com/gaodengpan/image-copier/internal/core"
+	"github.com/gaodengpan/image-copier/pkg/progress"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -379,4 +382,158 @@ func TestFormatImageResults(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestAsymptotic(t *testing.T) {
+	tests := []struct {
+		name       string
+		base       float64
+		rangeSize  float64
+		polls      int
+		wantMin    float64
+		wantMax    float64
+	}{
+		{
+			name:      "zero polls",
+			base:      20,
+			rangeSize: 60,
+			polls:     0,
+			wantMin:   20,
+			wantMax:   20,
+		},
+		{
+			name:      "one poll",
+			base:      20,
+			rangeSize: 60,
+			polls:     1,
+			wantMin:   20,
+			wantMax:   50,
+		},
+		{
+			name:      "many polls",
+			base:      20,
+			rangeSize: 60,
+			polls:     100,
+			wantMin:   69,
+			wantMax:   80,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := asymptotic(tt.base, tt.rangeSize, tt.polls)
+			assert.GreaterOrEqual(t, result, tt.wantMin)
+			assert.LessOrEqual(t, result, tt.wantMax)
+		})
+	}
+}
+
+func TestCreateStageCallback(t *testing.T) {
+	progressMgr := progress.NewProgress(1, 1)
+	startTime := time.Now()
+
+	callback := CreateStageCallback(progressMgr, 0, "test-image", startTime)
+
+	callback(core.PullStage(0), 0)
+	callback(core.StageCheckRegistry, 0)
+	callback(core.StageWaitWorkflow, 5)
+}
+
+func TestCreateCoreConfigFromConfig(t *testing.T) {
+	cfg := &config.Config{
+		Github: struct {
+			Owner      string "mapstructure:\"owner\""
+			Repo       string "mapstructure:\"repo\""
+			Token      string "mapstructure:\"token\""
+			WorkflowID string "mapstructure:\"workflow_id\""
+		}{
+			Owner:      "owner",
+			Repo:       "repo",
+			Token:      "token",
+			WorkflowID: "workflow.yaml",
+		},
+		Registry: struct {
+			Host      string "mapstructure:\"host\""
+			Username  string "mapstructure:\"username\""
+			Password  string "mapstructure:\"password\""
+			Namespace string "mapstructure:\"namespace\""
+			Arch      string "mapstructure:\"arch\""
+			Os        string "mapstructure:\"os\""
+		}{
+			Host:      "registry.example.com",
+			Username:  "user",
+			Password:  "pass",
+			Namespace: "ns",
+			Arch:      "amd64",
+			Os:        "linux",
+		},
+		LogLevel: "info",
+	}
+
+	coreCfg := CreateCoreConfigFromConfig(cfg, true, true)
+
+	assert.Equal(t, "owner", coreCfg.GithubOwner)
+	assert.Equal(t, "repo", coreCfg.GithubRepo)
+	assert.Equal(t, "token", coreCfg.GithubToken)
+	assert.Equal(t, "workflow.yaml", coreCfg.GithubWorkflowID)
+	assert.Equal(t, "registry.example.com", coreCfg.RegistryHost)
+	assert.Equal(t, "user", coreCfg.RegistryUsername)
+	assert.Equal(t, "pass", coreCfg.RegistryPassword)
+	assert.Equal(t, "ns", coreCfg.RegistryNamespace)
+	assert.Equal(t, "amd64", coreCfg.RegistryArch)
+	assert.Equal(t, "linux", coreCfg.RegistryOs)
+	assert.Equal(t, true, coreCfg.Force)
+	assert.Equal(t, true, coreCfg.DryRun)
+}
+
+func TestSetupLogger(t *testing.T) {
+	t.Run("info level", func(t *testing.T) {
+		cfg := &config.Config{LogLevel: "info"}
+		logger := SetupLogger(cfg, false)
+		assert.Equal(t, logrus.InfoLevel, logger.Level)
+	})
+
+	t.Run("debug level with verbose", func(t *testing.T) {
+		cfg := &config.Config{LogLevel: "info"}
+		logger := SetupLogger(cfg, true)
+		assert.Equal(t, logrus.DebugLevel, logger.Level)
+	})
+
+	t.Run("invalid level defaults to info", func(t *testing.T) {
+		cfg := &config.Config{LogLevel: "invalid"}
+		logger := SetupLogger(cfg, false)
+		assert.Equal(t, logrus.InfoLevel, logger.Level)
+	})
+}
+
+func TestCLIPresenter(t *testing.T) {
+	presenter := NewCLIPresenter()
+
+	t.Run("PresentCheckingImageCount", func(t *testing.T) {
+		presenter.PresentCheckingImageCount(5)
+	})
+
+	t.Run("PresentDiffSummary", func(t *testing.T) {
+		presenter.PresentDiffSummary(3, 2)
+	})
+
+	t.Run("PresentDryRunResults", func(t *testing.T) {
+		synced := []syncTask{{Source: "img1", Arch: "amd64", Os: "linux"}}
+		toSync := []syncTask{{Source: "img2", Arch: "amd64", Os: "linux"}}
+		presenter.PresentDryRunResults(synced, toSync)
+	})
+
+	t.Run("PresentProgress", func(t *testing.T) {
+		presenter.PresentProgress(1, 5)
+	})
+
+	t.Run("PresentSummary", func(t *testing.T) {
+		summary := &PullSummary{Succeeded: 1, Skipped: 0, Failed: 0}
+		results := []ImageResult{{Image: "test:latest", Success: true}}
+		presenter.PresentSummary(summary, results)
+	})
+
+	t.Run("PresentError", func(t *testing.T) {
+		presenter.PresentError(assert.AnError)
+	})
 }
