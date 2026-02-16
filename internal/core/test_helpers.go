@@ -12,6 +12,54 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type mockDockerClient struct{}
+
+func (m *mockDockerClient) ImageExists(ctx context.Context, imageID string) (bool, error) {
+	return false, nil
+}
+
+func (m *mockDockerClient) ListImages(ctx context.Context) ([]string, error) {
+	return []string{}, nil
+}
+
+func (m *mockDockerClient) LoadImage(ctx context.Context, tarPath string) error {
+	return nil
+}
+
+type mockRegistryClient struct{}
+
+func (m *mockRegistryClient) ImageExists(ctx context.Context, imageID, username, password string) (bool, error) {
+	return false, nil
+}
+
+func (m *mockRegistryClient) SaveImageToFile(ctx context.Context, imageID, imageTag, outputPath, username, password string) error {
+	return nil
+}
+
+func (m *mockRegistryClient) CheckImageExists(ctx context.Context, imageID, username, password string) (bool, error) {
+	return false, nil
+}
+
+type mockGitHubClient struct{}
+
+func (m *mockGitHubClient) TriggerWorkflow(ctx context.Context, owner, repo, workflowID string, inputs map[string]string) (string, error) {
+	return "", nil
+}
+
+func (m *mockGitHubClient) GetWorkflowStatus(ctx context.Context, owner, repo, runID string) (string, error) {
+	return "", nil
+}
+
+type mockFileSystem struct{}
+
+func (m *mockFileSystem) CreateTempFile(pattern string) (string, error) {
+	return "", nil
+}
+
+func (m *mockFileSystem) RemoveFile(path string) error {
+	return nil
+}
+
 // TestLogger captures log output for testing purposes
 type TestLogger struct {
 	*log.Logger
@@ -118,7 +166,12 @@ func newTestPullerWithLogHook(cfg *Config) (*Puller, *TestLogHook) {
 	hook := &TestLogHook{}
 	logger.AddHook(hook)
 
-	return NewPuller(cfg, logger), hook
+	dockerClient := &mockDockerClient{}
+	registryClient := &mockRegistryClient{}
+	githubClient := &mockGitHubClient{}
+	fs := &mockFileSystem{}
+
+	return NewPullerWithPorts(cfg, logger, dockerClient, registryClient, githubClient, fs), hook
 }
 
 // CaptureLogsWithBuffer runs a function and captures logs written with stdlib log

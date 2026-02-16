@@ -258,7 +258,7 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *core.Config, tasks []syncT
 	results := make([]diffResult, len(tasks))
 
 	// Create a temporary puller for local image checks
-	localChecker := core.NewPuller(baseCfg, logger)
+	localChecker := NewPuller(baseCfg, logger)
 	registryClient := registryadapter.NewSkopeoAdapter()
 
 	// Concurrent check (bounded by workerCount)

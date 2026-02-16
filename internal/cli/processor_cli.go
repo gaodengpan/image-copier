@@ -26,7 +26,7 @@ type CLIImagesProcessor struct {
 
 // Process handles a single CLI image task
 func (p *CLIImagesProcessor) Process(ctx context.Context, task WorkerPoolTask[CLIImage], progressMgr *progress.Progress, workerIdx int) error {
-	puller := core.NewPuller(task.Config, p.logger)
+	puller := NewPuller(task.Config, p.logger)
 
 	// Set up the stage callback to update progress
 	callback := CreateStageCallback(progressMgr, workerIdx, task.Item.DisplayName(), time.Now())

@@ -36,7 +36,7 @@ func (p *SyncTasksProcessor) Process(ctx context.Context, task WorkerPoolTask[Sy
 	taskCfg.RegistryOs = task.Item.Os
 	taskCfg.Force = p.force // Respect the force flag from processor
 
-	puller := core.NewPuller(&taskCfg, p.logger)
+	puller := NewPuller(&taskCfg, p.logger)
 
 	// Set up the stage callback to update progress
 	callback := CreateStageCallback(progressMgr, workerIdx, task.Item.DisplayName(), time.Now())

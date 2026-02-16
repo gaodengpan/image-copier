@@ -4,6 +4,9 @@ import (
 	"context"
 	"testing"
 
+	dockeradapter "github.com/gaodengpan/image-copier/internal/adapters/docker"
+	"github.com/gaodengpan/image-copier/internal/adapters/filesystem"
+	githubadapter "github.com/gaodengpan/image-copier/internal/adapters/github"
 	registryadapter "github.com/gaodengpan/image-copier/internal/adapters/registry"
 	"github.com/gaodengpan/image-copier/internal/config"
 	"github.com/gaodengpan/image-copier/internal/core"
@@ -11,6 +14,14 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
+
+func newPullerWithRealAdapters(cfg *core.Config, logger *logrus.Logger) *core.Puller {
+	dockerClient := dockeradapter.NewExecDockerAdapter()
+	registryClient := registryadapter.NewSkopeoAdapter()
+	githubClient := githubadapter.NewAPIAdapter(nil, cfg.GithubToken, cfg.GithubOwner, cfg.GithubRepo)
+	fs := filesystem.NewOSAdapter()
+	return core.NewPullerWithPorts(cfg, logger, dockerClient, registryClient, githubClient, fs)
+}
 
 // IntegrationTestSuite groups integration tests
 type IntegrationTestSuite struct {
@@ -47,7 +58,7 @@ func TestConfigPullerIntegration(t *testing.T) {
 		Build()
 
 	// Create puller with the config
-	puller := core.NewPuller(&core.Config{
+	puller := newPullerWithRealAdapters(&core.Config{
 		GithubOwner:       cfg.Github.Owner,
 		GithubRepo:        cfg.Github.Repo,
 		GithubToken:       cfg.Github.Token,
@@ -107,7 +118,7 @@ func TestConfigValidationIntegration(t *testing.T) {
 	assert.Contains(t, err.Error(), "github owner is required")
 
 	// Create puller with valid config to test retry integration
-	puller := core.NewPuller(&core.Config{
+	puller := newPullerWithRealAdapters(&core.Config{
 		GithubOwner:       validConfig.Github.Owner,
 		GithubRepo:        validConfig.Github.Repo,
 		GithubToken:       validConfig.Github.Token,
@@ -150,7 +161,7 @@ func TestRetryConfigIntegration(t *testing.T) {
 	assert.Equal(t, expectedRetryConfig.MaxInterval, parsedRetryConfig.MaxInterval)
 
 	// Create puller and verify retry config is applied
-	puller := core.NewPuller(&core.Config{
+	puller := newPullerWithRealAdapters(&core.Config{
 		GithubOwner:       customConfig.Github.Owner,
 		GithubRepo:        customConfig.Github.Repo,
 		GithubToken:       customConfig.Github.Token,
@@ -204,7 +215,7 @@ func TestPrePullValidationIntegration(t *testing.T) {
 	logger.SetLevel(logrus.DebugLevel)
 
 	// Create a puller
-	puller := core.NewPuller(&core.Config{
+	puller := newPullerWithRealAdapters(&core.Config{
 		GithubOwner:       "test-owner",
 		GithubRepo:        "test-repo",
 		GithubToken:       "test-token",

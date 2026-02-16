@@ -9,10 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gaodengpan/image-copier/internal/adapters/docker"
-	"github.com/gaodengpan/image-copier/internal/adapters/filesystem"
-	"github.com/gaodengpan/image-copier/internal/adapters/github"
-	"github.com/gaodengpan/image-copier/internal/adapters/registry"
 	"github.com/gaodengpan/image-copier/internal/domain/services"
 	"github.com/gaodengpan/image-copier/internal/domain/validators"
 	"github.com/gaodengpan/image-copier/internal/ports"
@@ -335,16 +331,6 @@ func NewPullerWithPorts(config *Config, logger *logrus.Logger,
 		GitHubClient:   githubClient,
 		FileSystem:     fs,
 	}
-}
-
-// NewPuller creates a new Puller instance with default adapters
-func NewPuller(config *Config, logger *logrus.Logger) *Puller {
-	dockerClient := docker.NewExecDockerAdapter()
-	registryClient := registry.NewSkopeoAdapter()
-	githubClient := github.NewAPIAdapter(nil, config.GithubToken, config.GithubOwner, config.GithubRepo)
-	fs := filesystem.NewOSAdapter()
-
-	return NewPullerWithPorts(config, logger, dockerClient, registryClient, githubClient, fs)
 }
 
 func (p *Puller) notifyStage(stage PullStage, polls int) {

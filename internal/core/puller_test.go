@@ -43,6 +43,54 @@ func (m *MockCommandRunner) Command(name string, arg ...string) *exec.Cmd {
 	return exec.Command("echo", "dummy command") // Always return a dummy command for testing
 }
 
+type testMockDockerClient struct{}
+
+func (m *testMockDockerClient) ImageExists(ctx context.Context, imageID string) (bool, error) {
+	return false, nil
+}
+
+func (m *testMockDockerClient) ListImages(ctx context.Context) ([]string, error) {
+	return []string{}, nil
+}
+
+func (m *testMockDockerClient) LoadImage(ctx context.Context, tarPath string) error {
+	return nil
+}
+
+type testMockRegistryClient struct{}
+
+func (m *testMockRegistryClient) ImageExists(ctx context.Context, imageID, username, password string) (bool, error) {
+	return false, nil
+}
+
+func (m *testMockRegistryClient) SaveImageToFile(ctx context.Context, imageID, imageTag, outputPath, username, password string) error {
+	return nil
+}
+
+func (m *testMockRegistryClient) CheckImageExists(ctx context.Context, imageID, username, password string) (bool, error) {
+	return false, nil
+}
+
+type testMockGitHubClient struct{}
+
+func (m *testMockGitHubClient) TriggerWorkflow(ctx context.Context, owner, repo, workflowID string, inputs map[string]string) (string, error) {
+	return "", nil
+}
+
+func (m *testMockGitHubClient) GetWorkflowStatus(ctx context.Context, owner, repo, runID string) (string, error) {
+	return "", nil
+}
+
+type testMockFileSystem struct{}
+
+func (m *testMockFileSystem) CreateTempFile(pattern string) (string, error) {
+	return "", nil
+}
+
+func (m *testMockFileSystem) RemoveFile(path string) error {
+	return nil
+}
+
 func setupTestEnvironment(t *testing.T) (*Puller, *logrus.Logger, *test.Hook) {
 	logger, hook := test.NewNullLogger()
 	logger.SetLevel(logrus.DebugLevel)
@@ -61,7 +109,7 @@ func setupTestEnvironment(t *testing.T) (*Puller, *logrus.Logger, *test.Hook) {
 		RetryConfig:       retry.DefaultConfig(),
 	}
 
-	puller := NewPuller(config, logger)
+	puller := NewPullerWithPorts(config, logger, &testMockDockerClient{}, &testMockRegistryClient{}, &testMockGitHubClient{}, &testMockFileSystem{})
 	return puller, logger, hook
 }
 
@@ -232,7 +280,7 @@ func TestNewPuller(t *testing.T) {
 		RetryConfig:       retry.DefaultConfig(),
 	}
 
-	puller := NewPuller(config, logger)
+	puller := NewPullerWithPorts(config, logger, &testMockDockerClient{}, &testMockRegistryClient{}, &testMockGitHubClient{}, &testMockFileSystem{})
 
 	assert.NotNil(t, puller)
 	assert.Equal(t, config, puller.Config)
