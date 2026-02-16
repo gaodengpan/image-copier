@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	registryadapter "github.com/gaodengpan/image-copier/internal/adapters/registry"
 	"github.com/gaodengpan/image-copier/internal/config"
 	"github.com/gaodengpan/image-copier/internal/core"
 	"github.com/gaodengpan/image-copier/pkg/retry"
@@ -141,7 +142,7 @@ func TestRetryConfigIntegration(t *testing.T) {
 	parsedRetryConfig := customConfig.ParseRetryConfig()
 	expectedRetryConfig := &retry.Config{
 		MaxAttempts:     5,
-		InitialInterval: 2 * 1000 * 1000 * 1000, // 2 seconds in nanoseconds
+		InitialInterval: 2 * 1000 * 1000 * 1000,  // 2 seconds in nanoseconds
 		MaxInterval:     60 * 1000 * 1000 * 1000, // 60 seconds in nanoseconds
 	}
 
@@ -230,25 +231,19 @@ func TestPrePullValidationIntegration(t *testing.T) {
 
 // TestImageExistenceFunctionsIntegration tests the integration of image existence checking functions
 func TestImageExistenceFunctionsIntegration(t *testing.T) {
-	// Test the CheckImageExists function with a fake image name
+	skopeoAdapter := registryadapter.NewSkopeoAdapter()
 	ctx := context.Background()
 
-	// This will fail due to network/auth issues, but that's expected
-	// The important thing is that the validation passes and function doesn't crash
-	exists, err := core.CheckImageExists(ctx, "example.com/fake/image:tag", "fakeuser", "fakepass")
+	exists, err := skopeoAdapter.CheckImageExists(ctx, "example.com/fake/image:tag", "fakeuser", "fakepass")
 
-	// The function should return false, nil when image doesn't exist or is inaccessible
-	// (rather than an error)
 	assert.False(t, exists)
-	assert.NoError(t, err) // The function handles network errors internally
+	assert.NoError(t, err)
 
-	// Test with invalid image name (should return error)
-	_, err = core.CheckImageExists(ctx, "invalid;command", "fakeuser", "fakepass")
+	_, err = skopeoAdapter.CheckImageExists(ctx, "invalid;command", "fakeuser", "fakepass")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid image name")
 
-	// Test with invalid credentials
-	_, err = core.CheckImageExists(ctx, "example.com/fake/image:tag", "fake;user", "fakepass")
+	_, err = skopeoAdapter.CheckImageExists(ctx, "example.com/fake/image:tag", "fake;user", "fakepass")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid credentials")
 }

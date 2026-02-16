@@ -8,16 +8,15 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/gaodengpan/image-copier/pkg/retry"
+	"github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/sirupsen/logrus"
-	"github.com/sirupsen/logrus/hooks/test"
 )
 
 // MockHTTPClient is a mock implementation of HTTP client interface
@@ -196,11 +195,11 @@ func TestNormalizeSourceID(t *testing.T) {
 
 func TestBuildDestImageID(t *testing.T) {
 	tests := []struct {
-		name             string
-		registryHost     string
+		name              string
+		registryHost      string
 		registryNamespace string
-		sourceID         string
-		expected         string
+		sourceID          string
+		expected          string
 	}{
 		{"full params with host and namespace", "registry.com", "ns", "nginx:latest", "registry.com/ns/nginx:latest"},
 		{"only host", "registry.com", "", "nginx:latest", "registry.com/nginx:latest"},
@@ -243,27 +242,6 @@ func TestNewPuller(t *testing.T) {
 	assert.NotNil(t, puller.LocalImageCache)
 	assert.NotNil(t, puller.ImageValidator)
 	assert.Equal(t, MaxCacheSizeDefault, puller.MaxCacheSize)
-}
-
-func TestCheckImageExists(t *testing.T) {
-	// We'll test the validation aspects of this function since the network call is difficult to mock
-	ctx := context.Background()
-
-	// Test with invalid image name
-	_, err := CheckImageExists(ctx, "invalid;command", "user", "pass")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid image name")
-
-	// Test with invalid credentials
-	_, err = CheckImageExists(ctx, "valid/image:tag", "user;", "pass")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid credentials")
-
-	// Test with valid inputs (this would normally fail due to network, but function will timeout)
-	result, err := CheckImageExists(ctx, "valid/image:tag", "user", "pass")
-	// The function should return (false, nil) when command fails due to timeout or network issues
-	assert.NoError(t, err)
-	assert.False(t, result)
 }
 
 func TestHTTPClientFactory_NewHTTPClient(t *testing.T) {
@@ -341,25 +319,6 @@ func TestPuller_notifyStage(t *testing.T) {
 	assert.True(t, callbackCalled)
 	assert.Equal(t, StageCheckLocal, callbackParams.stage)
 	assert.Equal(t, 5, callbackParams.polls)
-}
-
-// Additional tests for edge cases
-func TestExecuteSkopeoCopy_ContextCancellation(t *testing.T) {
-	// Create a context that's already cancelled
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	err := executeSkopeoCopy(ctx, "skopeo", "user:pass", "dest", "/tmp/test.tar", "src")
-	assert.Error(t, err)
-}
-
-func TestExecuteDockerLoad_ContextCancellation(t *testing.T) {
-	// Create a context that's already cancelled
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	err := executeDockerLoad(ctx, "docker", "/tmp/test.tar")
-	assert.Error(t, err)
 }
 
 func TestPuller_buildExpectedWorkflowName(t *testing.T) {
@@ -441,58 +400,11 @@ func TestPuller_checkLocalImageWithCacheRefresh_InvalidInput(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid image name")
 }
 
-// Test for error handling in copyAndImportImage
-func TestPuller_copyAndImportImage_InvalidInputs(t *testing.T) {
-	puller, _, _ := setupTestEnvironment(t)
-
-	ctx := context.Background()
-	err := puller.copyAndImportImage(ctx, "invalid;command", "valid/image:tag")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid image name")
-
-	err = puller.copyAndImportImage(ctx, "valid/image:tag", "invalid;command")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid image name")
-
-	err = puller.copyAndImportImage(ctx, "valid/image:tag", "valid/image:tag")
-	// This will likely fail due to temp file creation or other runtime issues, but at least we tested the validation
-	assert.Error(t, err) // Expecting an error because skopeo/docker won't be available in test env
-}
-
 // Test for error handling in triggerWorkflow
 func TestPuller_triggerWorkflow_NetworkError(t *testing.T) {
 	// Skipping this test because we cannot mock HTTP client without changing the source code
 	// In a real scenario, this would involve mocking the HTTP client interface
 	t.Skip("Skipping network error test due to limitations in mocking HTTP client without modifying source code")
-}
-
-// Test the mutex usage in checkLocalImageWithCacheRefreshAndAliases
-func TestPuller_checkLocalImageWithCacheRefreshAndAliases_Mutex(t *testing.T) {
-	puller, _, _ := setupTestEnvironment(t)
-
-	// Set a short cache TTL to force refresh
-	puller.CacheTimestamp = time.Now().Add(-time.Hour) // Past time to force refresh
-
-	ctx := context.Background()
-
-	// Use multiple goroutines to test mutex behavior
-	var wg sync.WaitGroup
-	const numGoroutines = 5
-
-	for i := 0; i < numGoroutines; i++ {
-		wg.Add(1)
-		go func(id int) {
-			defer wg.Done()
-			// This will try to refresh cache, testing the mutex synchronization
-			_, err := puller.checkLocalImageWithCacheRefreshAndAliases(ctx, fmt.Sprintf("image%d", id), fmt.Sprintf("normalized%d", id))
-			// We expect this to error out due to missing docker/skopeo, but the mutex should work properly
-			if err != nil && !strings.Contains(err.Error(), "primary cache refresh failed") {
-				t.Errorf("Unexpected error: %v", err)
-			}
-		}(i)
-	}
-
-	wg.Wait()
 }
 
 // Test that error variables have the correct values

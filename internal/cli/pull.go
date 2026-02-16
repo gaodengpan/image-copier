@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
 
+	registryadapter "github.com/gaodengpan/image-copier/internal/adapters/registry"
 	"github.com/gaodengpan/image-copier/internal/config"
 	"github.com/gaodengpan/image-copier/internal/core"
 	"github.com/gaodengpan/image-copier/pkg/logformat"
@@ -258,6 +259,7 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *core.Config, tasks []syncT
 
 	// Create a temporary puller for local image checks
 	localChecker := core.NewPuller(baseCfg, logger)
+	registryClient := registryadapter.NewSkopeoAdapter()
 
 	// Concurrent check (bounded by workerCount)
 	sem := make(chan struct{}, workerCount)
@@ -271,7 +273,7 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *core.Config, tasks []syncT
 
 			sourceID := core.NormalizeSourceID(task.Source)
 			destID := core.BuildDestImageID(baseCfg.RegistryHost, baseCfg.RegistryNamespace, sourceID)
-			remoteExists, _ := core.CheckImageExists(ctx, destID, baseCfg.RegistryUsername, baseCfg.RegistryPassword)
+			remoteExists, _ := registryClient.CheckImageExists(ctx, destID, baseCfg.RegistryUsername, baseCfg.RegistryPassword)
 			localExists, _ := localChecker.CheckLocalImageExists(ctx, task.Source)
 			results[idx] = diffResult{task: task, remoteExists: remoteExists, localExists: localExists}
 		}(i, t)
