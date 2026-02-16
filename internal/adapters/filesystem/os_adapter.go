@@ -14,7 +14,7 @@ func NewOSAdapter() *OSAdapter {
 }
 
 func (a *OSAdapter) CreateTempFile(pattern string) (string, error) {
-	tmpFile, err := os.CreateTemp("", pattern)
+	tmpFile, err := os.CreateTemp("/tmp/", pattern)
 	if err != nil {
 		return "", errors.NewFileSystemError("CreateTempFile", "failed to create temp file", err)
 	}

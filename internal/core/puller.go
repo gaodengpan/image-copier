@@ -36,7 +36,7 @@ const (
 	StageCheckRegistry                    // Check remote registry
 	StageTriggerWorkflow                  // Trigger GitHub Workflow
 	StageWaitWorkflow                     // Wait for Workflow completion
-	StageCopyImage                        // skopeo copy (download image)
+	StageDownloadImage                    // Download image from registry to local file
 	StageLoadImage                        // docker load (import locally)
 )
 
@@ -115,9 +115,9 @@ func (p *Puller) createTempFile() (string, error) {
 	return p.FileSystem.CreateTempFile("image-copier-*.tar")
 }
 
-// executeSkopeoCopy executes the skopeo copy command
-func (p *Puller) executeSkopeoCopy(ctx context.Context, skopeoCmd, creds, destImageID, tmpPath, sourceID string) error {
-	return p.RegistryClient.CopyImage(ctx, "docker://"+destImageID, "docker-archive:"+tmpPath+":"+sourceID, "", "")
+// downloadImageFromRegistry downloads an image from registry to a local file
+func (p *Puller) downloadImageFromRegistry(ctx context.Context, registryImageID, userImageTag, outputPath, username, password string) error {
+	return p.RegistryClient.SaveImageToFile(ctx, registryImageID, userImageTag, outputPath, username, password)
 }
 
 // executeDockerLoad executes the docker load command
@@ -418,9 +418,9 @@ func (p *Puller) PullSingle(ctx context.Context, imageID string) error {
 		p.Logger.Info("Image already exists in destination registry")
 	}
 
-	// Copy and import image
-	p.notifyStage(StageCopyImage, 0)
-	if err := p.copyAndImportImage(ctx, destImageID, sourceID); err != nil {
+	// Download image from registry and load to Docker
+	p.notifyStage(StageDownloadImage, 0)
+	if err := p.downloadAndLoadImage(ctx, destImageID, imageID, p.Config.RegistryUsername, p.Config.RegistryPassword); err != nil {
 		return fmt.Errorf("failed to copy and import image: %w", err)
 	}
 
@@ -851,48 +851,29 @@ func (p *Puller) waitForWorkflow(ctx context.Context, runID string) error {
 	}
 }
 
-func (p *Puller) copyAndImportImage(ctx context.Context, destImageID, sourceID string) error {
-	// Validate inputs to prevent command injection
-	if !p.ImageValidator.IsValidImageName(destImageID) {
-		return fmt.Errorf("%s: %s", "invalid image name", sanitizeForLog(destImageID))
-	}
-	if !p.ImageValidator.IsValidImageName(sourceID) {
-		return fmt.Errorf("%s: %s", "invalid image name", sanitizeForLog(sourceID))
+func (p *Puller) downloadAndLoadImage(ctx context.Context, registryImageID, userImageTag, username, password string) error {
+	if !p.ImageValidator.IsValidImageName(registryImageID) {
+		return fmt.Errorf("%s: %s", "invalid image name", sanitizeForLog(registryImageID))
 	}
 
-	// Create temporary file
 	tmpPath, err := p.createTempFile()
 	if err != nil {
 		return err
 	}
 
-	// Register cleanup function
 	cleanup := func() {
 		if err := p.FileSystem.RemoveFile(tmpPath); err != nil {
 			p.Logger.Warnf("Failed to remove temp file %s: %v", tmpPath, err)
 		}
 	}
-
-	// Ensure cleanup happens even if function exits early
 	defer cleanup()
 
-	// Validate credentials to prevent command injection
-	username := p.Config.RegistryUsername
-	password := p.Config.RegistryPassword
-	if !p.ImageValidator.ValidateCredentials(username, password) {
-		return fmt.Errorf("invalid credentials")
-	}
-
-	creds := fmt.Sprintf("%s%s%s", username, CredentialsSeparator, password)
-
-	// Execute skopeo copy
-	if err := p.executeSkopeoCopy(ctx, SkopeoCommand, creds, destImageID, tmpPath, sourceID); err != nil {
+	if err := p.downloadImageFromRegistry(ctx, registryImageID, userImageTag, tmpPath, username, password); err != nil {
 		return err
 	}
 
 	p.notifyStage(StageLoadImage, 0)
 
-	// Execute docker load
 	if err := p.executeDockerLoad(ctx, DockerCommand, tmpPath); err != nil {
 		return err
 	}

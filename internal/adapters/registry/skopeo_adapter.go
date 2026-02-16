@@ -56,24 +56,27 @@ func (a *SkopeoAdapter) ImageExists(ctx context.Context, imageID, username, pass
 	return true, nil
 }
 
-func (a *SkopeoAdapter) CopyImage(ctx context.Context, source, dest, username, password string) error {
-	if !a.validator.IsValidImageName(source) || !a.validator.IsValidImageName(dest) {
-		return errors.NewRegistryError("CopyImage", "invalid image name", nil)
+func (a *SkopeoAdapter) SaveImageToFile(ctx context.Context, imageID, imageTag, outputPath, username, password string) error {
+	if !a.validator.IsValidImageName(imageID) {
+		return errors.NewRegistryError("SaveImageToFile", "invalid image name", nil)
+	}
+	if !a.validator.ValidateFilePath(outputPath) {
+		return errors.NewRegistryError("SaveImageToFile", "invalid file path", nil)
 	}
 
 	if !a.validator.ValidateCredentials(username, password) {
-		return errors.NewRegistryError("CopyImage", "invalid credentials", nil)
+		return errors.NewRegistryError("SaveImageToFile", "invalid credentials", nil)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, SkopeoCopyTimeout)
 	defer cancel()
 
 	creds := fmt.Sprintf("%s:%s", username, password)
-	cmd := a.commandRunner(ctx, SkopeoCommand, "copy", "--src-creds="+creds, "docker://"+source, "docker-archive:"+dest)
+	cmd := a.commandRunner(ctx, SkopeoCommand, "copy", "--src-creds="+creds, "docker://"+imageID, "docker-archive:"+outputPath+":"+imageTag)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return errors.NewRegistryError("CopyImage", fmt.Sprintf("failed to copy image: %s", string(output)), err)
+		return errors.NewRegistryError("SaveImageToFile", fmt.Sprintf("failed to save image: %s", string(output)), err)
 	}
 
 	return nil
