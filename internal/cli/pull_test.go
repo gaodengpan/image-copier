@@ -429,7 +429,7 @@ func TestAsymptotic(t *testing.T) {
 }
 
 func TestCreateStageCallback(t *testing.T) {
-	progressMgr := progress.NewProgress(1, 1)
+	progressMgr := progress.NewProgress(1, 1, false)
 	startTime := time.Now()
 
 	callback := CreateStageCallback(progressMgr, 0, "test-image", startTime)

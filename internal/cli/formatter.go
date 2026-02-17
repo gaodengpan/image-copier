@@ -33,6 +33,8 @@ func FormatPullSummary(s *PullSummary) string {
 
 type ImageResult struct {
 	Image   string
+	Arch    string
+	Os      string
 	Success bool
 	Skipped bool
 	DryRun  bool

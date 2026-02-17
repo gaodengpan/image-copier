@@ -33,6 +33,7 @@ type PullCommandOptions struct {
 	Force       bool
 	DryRun      bool
 	Verbose     bool
+	Output      string
 }
 
 // NewPullCommandWithConfigProvider creates a new pull command that accepts a ConfigProvider
@@ -52,6 +53,7 @@ func NewPullCommandWithConfigProviderAndOptions(configProvider config.ConfigProv
 		force       = opts.Force
 		dryRun      = opts.DryRun
 		verbose     = opts.Verbose
+		output      = opts.Output
 	)
 
 	cmd := &cobra.Command{
@@ -109,7 +111,7 @@ Supports two modes:
 					return nil
 				}
 				workerCount = calculateAdaptiveWorkerCount(jobsSpecified, workerCount, len(tasks), runtime.NumCPU())
-				return processSyncTasks(logger, baseCfg, tasks, workerCount, force, dryRun, verbose, ctx)
+				return processSyncTasks(logger, baseCfg, tasks, workerCount, force, dryRun, verbose, ctx, output)
 			}
 
 			// === 命令式模式（CLI 参数）===
@@ -132,7 +134,7 @@ Supports two modes:
 			}
 
 			workerCount = calculateAdaptiveWorkerCount(jobsSpecified, workerCount, len(tasks), runtime.NumCPU())
-			return processSyncTasks(logger, baseCfg, tasks, workerCount, force, dryRun, verbose, ctx)
+			return processSyncTasks(logger, baseCfg, tasks, workerCount, force, dryRun, verbose, ctx, output)
 		},
 	}
 
@@ -144,6 +146,7 @@ Supports two modes:
 	cmd.Flags().BoolVar(&force, "force", false, "Force re-pull even if image exists locally")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show what would be done without making changes")
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show detailed log output above progress bars")
+	cmd.Flags().StringVarP(&output, "output", "o", "text", "Output format: text or json")
 
 	cmd.SilenceUsage = true
 
@@ -222,9 +225,14 @@ func calculateAdaptiveWorkerCount(userSpecified bool, userValue, taskCount, cpuC
 }
 
 func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syncTask,
-	workerCount int, force, dryRun, verbose bool, ctx context.Context) error {
+	workerCount int, force, dryRun, verbose bool, ctx context.Context, outputFormat string) error {
 
-	presenter := NewCLIPresenter()
+	var presenter PullPresenter
+	if outputFormat == "json" {
+		presenter = NewJSONPresenter()
+	} else {
+		presenter = NewCLIPresenter()
+	}
 	presenter.PresentCheckingImageCount(len(tasks))
 
 	// === Phase 1: Diff ===
@@ -274,17 +282,48 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syn
 
 	if dryRun {
 		presenter.PresentDryRunResults(synced, needsSync)
+		imageResults := make([]ImageResult, 0, len(synced)+len(needsSync))
+		for _, t := range synced {
+			imageResults = append(imageResults, ImageResult{
+				Image:   t.Source,
+				Arch:    t.Arch,
+				Os:      t.Os,
+				Skipped: true,
+			})
+		}
+		for _, t := range needsSync {
+			imageResults = append(imageResults, ImageResult{
+				Image:  t.Source,
+				Arch:   t.Arch,
+				Os:     t.Os,
+				DryRun: true,
+			})
+		}
 		presenter.PresentSummary(&PullSummary{
 			Succeeded: 0,
 			Skipped:   len(synced),
 			DryRun:    len(needsSync),
 			Failed:    0,
-		}, nil)
+		}, imageResults)
 		return nil
 	}
 
 	if len(needsSync) == 0 {
-		fmt.Println("Everything is up to date.")
+		imageResults := make([]ImageResult, len(synced))
+		for i, t := range synced {
+			imageResults[i] = ImageResult{
+				Image:   t.Source,
+				Arch:    t.Arch,
+				Os:      t.Os,
+				Skipped: true,
+			}
+		}
+		presenter.PresentSummary(&PullSummary{
+			Succeeded: 0,
+			Skipped:   len(synced),
+			DryRun:    0,
+			Failed:    0,
+		}, imageResults)
 		return nil
 	}
 
@@ -292,7 +331,8 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syn
 
 	// Progress tracks all images (needsSync + synced) for unified summary display
 	totalCount := len(needsSync) + len(synced)
-	p := progress.NewProgress(totalCount, workerCount)
+	noOutput := outputFormat == "json"
+	p := progress.NewProgress(totalCount, workerCount, noOutput)
 
 	// Add needsSync images to progress
 	for i, t := range needsSync {
@@ -405,20 +445,27 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syn
 			continue
 		}
 		img := images[i]
+		t := needsSync[i]
 		switch img.Status {
 		case progress.StatusCompleted:
 			imageResults = append(imageResults, ImageResult{
-				Image:   img.Image,
+				Image:   t.Source,
+				Arch:    t.Arch,
+				Os:      t.Os,
 				Success: true,
 			})
 		case progress.StatusSkipped:
 			imageResults = append(imageResults, ImageResult{
-				Image:   img.Image,
+				Image:   t.Source,
+				Arch:    t.Arch,
+				Os:      t.Os,
 				Skipped: true,
 			})
 		case progress.StatusDryRun:
 			imageResults = append(imageResults, ImageResult{
-				Image:  img.Image,
+				Image:  t.Source,
+				Arch:   t.Arch,
+				Os:     t.Os,
 				DryRun: true,
 			})
 		case progress.StatusFailed:
@@ -427,14 +474,17 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syn
 				errMsg = img.Error.Error()
 			}
 			imageResults = append(imageResults, ImageResult{
-				Image:  img.Image,
+				Image:  t.Source,
+				Arch:   t.Arch,
+				Os:     t.Os,
 				Failed: true,
 				Error:  errMsg,
 			})
 		default:
-			// Running or unknown status - treat as success if no error
 			imageResults = append(imageResults, ImageResult{
-				Image:   img.Image,
+				Image:   t.Source,
+				Arch:    t.Arch,
+				Os:      t.Os,
 				Success: true,
 			})
 		}
@@ -445,9 +495,11 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syn
 		if i >= len(images) || images[i] == nil {
 			continue
 		}
-		img := images[i]
+		t := synced[i-len(needsSync)]
 		imageResults = append(imageResults, ImageResult{
-			Image:   img.Image,
+			Image:   t.Source,
+			Arch:    t.Arch,
+			Os:      t.Os,
 			Skipped: true,
 		})
 	}

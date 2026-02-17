@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 )
 
@@ -39,4 +40,67 @@ func (p *CLIPresenter) PresentSummary(s *PullSummary, results []ImageResult) {
 
 func (p *CLIPresenter) PresentError(err error) {
 	fmt.Printf("Error: %v\n", err)
+}
+
+type JSONPresenter struct{}
+
+func NewJSONPresenter() *JSONPresenter {
+	return &JSONPresenter{}
+}
+
+func (p *JSONPresenter) PresentCheckingImageCount(count int) {
+}
+
+func (p *JSONPresenter) PresentDiffSummary(syncedCount, toSyncCount int) {
+}
+
+func (p *JSONPresenter) PresentDryRunResults(synced, toSync []syncTask) {
+}
+
+func (p *JSONPresenter) PresentProgress(current, total int) {
+}
+
+func (p *JSONPresenter) PresentSummary(s *PullSummary, results []ImageResult) {
+	type imageResultJSON struct {
+		Image   string `json:"image"`
+		Arch    string `json:"arch"`
+		Os      string `json:"os"`
+		Success bool   `json:"success,omitempty"`
+		Skipped bool   `json:"skipped,omitempty"`
+		DryRun  bool   `json:"dry_run,omitempty"`
+		Failed  bool   `json:"failed,omitempty"`
+		Error   string `json:"error,omitempty"`
+	}
+
+	imgResults := make([]imageResultJSON, len(results))
+	for i, r := range results {
+		imgResults[i] = imageResultJSON{
+			Image:   r.Image,
+			Arch:    r.Arch,
+			Os:      r.Os,
+			Success: r.Success,
+			Skipped: r.Skipped,
+			DryRun:  r.DryRun,
+			Failed:  r.Failed,
+			Error:   r.Error,
+		}
+	}
+
+	output := map[string]interface{}{
+		"summary": s,
+		"images":  imgResults,
+	}
+
+	jsonBytes, err := json.MarshalIndent(output, "", "  ")
+	if err != nil {
+		fmt.Printf("Error marshaling JSON: %v\n", err)
+		return
+	}
+	fmt.Println(string(jsonBytes))
+}
+
+func (p *JSONPresenter) PresentError(err error) {
+	errJSON := map[string]string{"error": err.Error()}
+	jsonBytes, _ := json.MarshalIndent(errJSON, "", "  ")
+	fmt.Println(string(jsonBytes))
 }

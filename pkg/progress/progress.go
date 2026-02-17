@@ -70,11 +70,26 @@ type Progress struct {
 	total       int
 	startedAt   time.Time
 	mu          sync.Mutex
+	noOutput    bool
 }
 
 // NewProgress creates a new progress tracker with an mpb container.
 // workerCount determines how many worker status lines are displayed below the main bar.
-func NewProgress(total int, workerCount int) *Progress {
+// If noOutput is true, no UI is displayed (useful for JSON output mode).
+func NewProgress(total int, workerCount int, noOutput bool) *Progress {
+	if noOutput {
+		p := &Progress{
+			images:    make([]*ImageProgress, total),
+			total:     total,
+			startedAt: time.Now(),
+			noOutput:  true,
+		}
+		for i := 0; i < total; i++ {
+			p.images[i] = &ImageProgress{}
+		}
+		return p
+	}
+
 	container := mpb.New(
 		mpb.WithWidth(64),
 	)
@@ -130,6 +145,7 @@ func NewProgress(total int, workerCount int) *Progress {
 		images:      make([]*ImageProgress, total),
 		total:       total,
 		startedAt:   time.Now(),
+		noOutput:    false,
 	}
 
 	if total == 0 {
@@ -180,7 +196,7 @@ func (p *Progress) SetDuration(index int, d time.Duration) {
 // UpdateWorker sets the display text for a specific worker line.
 // Pass an empty string to clear the worker line (when idle between images).
 func (p *Progress) UpdateWorker(workerIdx int, imageName string) {
-	if workerIdx >= len(p.workerTexts) {
+	if p.noOutput || workerIdx >= len(p.workerTexts) {
 		return
 	}
 	if imageName == "" {
@@ -192,9 +208,10 @@ func (p *Progress) UpdateWorker(workerIdx int, imageName string) {
 
 // UpdateStage sets the stage display info for a worker.
 func (p *Progress) UpdateStage(workerIdx int, info StageInfo) {
-	if workerIdx < len(p.workerTexts) {
-		p.workerTexts[workerIdx].Store(info)
+	if p.noOutput || workerIdx >= len(p.workerTexts) {
+		return
 	}
+	p.workerTexts[workerIdx].Store(info)
 }
 
 // GetImages returns a copy of all images with their status.
@@ -254,16 +271,25 @@ func smartTruncate(s string, maxLen int) string {
 
 // Increment increments the main progress bar by 1
 func (p *Progress) Increment() {
+	if p.noOutput {
+		return
+	}
 	p.mainBar.Increment()
 }
 
 // SetInitialProgress sets the initial completed count (for already-skipped items)
 func (p *Progress) SetInitialProgress(count int) {
+	if p.noOutput {
+		return
+	}
 	p.mainBar.SetCurrent(int64(count))
 }
 
 // CompleteSkipped marks all images from index start as completed (for skipped items)
 func (p *Progress) CompleteSkipped(start int) {
+	if p.noOutput {
+		return
+	}
 	for i := start; i < len(p.images); i++ {
 		if p.images[i] != nil {
 			p.mainBar.Increment()
@@ -273,6 +299,9 @@ func (p *Progress) CompleteSkipped(start int) {
 
 // AbortWorkers aborts all worker bars without printing summary
 func (p *Progress) AbortWorkers() {
+	if p.noOutput {
+		return
+	}
 	for _, bar := range p.workerBars {
 		bar.Abort(true)
 	}
@@ -280,6 +309,9 @@ func (p *Progress) AbortWorkers() {
 
 // WaitContainer waits for the mpb render loop to finish
 func (p *Progress) WaitContainer() {
+	if p.noOutput {
+		return
+	}
 	p.container.Wait()
 }
 
@@ -367,5 +399,8 @@ func (p *Progress) printSummary() {
 // LogWriter returns an io.Writer that outputs text above the progress bars.
 // This leverages mpb's built-in io.Writer support on the Progress container.
 func (p *Progress) LogWriter() io.Writer {
+	if p.noOutput {
+		return io.Discard
+	}
 	return p.container
 }
