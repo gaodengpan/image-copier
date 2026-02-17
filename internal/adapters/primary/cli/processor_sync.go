@@ -14,6 +14,8 @@ import (
 	"github.com/gaodengpan/image-copier/internal/adapters/secondary/registry"
 	"github.com/gaodengpan/image-copier/internal/application/ports"
 	"github.com/gaodengpan/image-copier/internal/application/usecases"
+	"github.com/gaodengpan/image-copier/internal/domain/services"
+	"github.com/gaodengpan/image-copier/internal/infrastructure/system"
 	"github.com/gaodengpan/image-copier/pkg/progress"
 )
 
@@ -39,7 +41,9 @@ type SyncTasksProcessor struct {
 	registryClient ports.RegistryClient
 	githubClient   ports.GitHubClient
 	fileSystem     ports.FileSystem
-	httpClient     *http.Client
+	httpClient     ports.HTTPClient
+	systemClient   ports.SystemClient
+	imageIDService *services.ImageIDService
 }
 
 func NewSyncTasksProcessor(logger *logrus.Logger, force bool) *SyncTasksProcessor {
@@ -51,6 +55,8 @@ func NewSyncTasksProcessor(logger *logrus.Logger, force bool) *SyncTasksProcesso
 		githubClient:   github.NewAPIAdapter(nil, "", "", ""),
 		fileSystem:     filesystem.NewOSAdapter(),
 		httpClient:     &http.Client{},
+		systemClient:   system.NewSystemAdapter(),
+		imageIDService: services.NewImageIDService(),
 	}
 }
 
@@ -105,6 +111,8 @@ func (p *SyncTasksProcessor) Process(ctx context.Context, task WorkerPoolTask[Sy
 		p.fileSystem,
 		p.httpClient,
 		p.logger,
+		p.systemClient,
+		p.imageIDService,
 		taskCfg.Github.Owner,
 		taskCfg.Github.Repo,
 		taskCfg.Github.Token,

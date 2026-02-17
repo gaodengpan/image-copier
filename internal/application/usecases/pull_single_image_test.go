@@ -6,10 +6,30 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/gaodengpan/image-copier/internal/application/usecases/mocks"
+	"github.com/gaodengpan/image-copier/internal/domain/services"
 	"github.com/gaodengpan/image-copier/internal/domain/validators"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
+
+func newTestUseCase(docker *mockDockerClient, registry *mockRegistryClient, github *mockGitHubClient, fs *mockFileSystem, logger *mockLogger) *PullSingleImageUseCaseImpl {
+	return newTestUseCaseWithCallback(docker, registry, github, fs, logger, nil)
+}
+
+func newTestUseCaseWithCallback(docker *mockDockerClient, registry *mockRegistryClient, github *mockGitHubClient, fs *mockFileSystem, logger *mockLogger, callback func(stage PullStage, polls int)) *PullSingleImageUseCaseImpl {
+	systemClient := new(mocks.MockSystemClient)
+	systemClient.On("CommandExists", mock.Anything, "skopeo").Return(true, nil)
+	systemClient.On("CommandExists", mock.Anything, "docker").Return(true, nil)
+	systemClient.On("DockerRunning", mock.Anything).Return(true, nil)
+
+	return NewPullSingleImageUseCase(
+		docker, registry, github, fs, nil, logger,
+		systemClient, services.NewImageIDService(),
+		"owner", "repo", "token", "workflow",
+		callback,
+	)
+}
 
 type mockDockerClient struct {
 	mock.Mock
@@ -100,11 +120,7 @@ func TestPullSingleImageUseCase_Execute_InvalidImageName(t *testing.T) {
 	fs := new(mockFileSystem)
 	logger := new(mockLogger)
 
-	uc := NewPullSingleImageUseCase(
-		docker, registry, github, fs, nil, logger,
-		"owner", "repo", "token", "workflow",
-		nil,
-	)
+	uc := newTestUseCase(docker, registry, github, fs, logger)
 
 	input := PullSingleImageInput{
 		ImageID:      "invalid;command",
@@ -129,11 +145,7 @@ func TestPullSingleImageUseCase_Execute_SkippedWhenLocalExists(t *testing.T) {
 	docker.On("ImageExists", mock.Anything, "nginx").Return(true, nil)
 	registry.On("BuildDestImageID", mock.Anything, mock.Anything, mock.Anything).Return("registry.com/ns/nginx:latest")
 
-	uc := NewPullSingleImageUseCase(
-		docker, registry, github, fs, nil, logger,
-		"owner", "repo", "token", "workflow",
-		nil,
-	)
+	uc := newTestUseCase(docker, registry, github, fs, logger)
 
 	input := PullSingleImageInput{
 		ImageID:      "nginx",
@@ -161,11 +173,7 @@ func TestPullSingleImageUseCase_Execute_DryRun_ImageExistsInRegistry(t *testing.
 	registry.On("ImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(true, nil)
 	registry.On("BuildDestImageID", mock.Anything, mock.Anything, mock.Anything).Return("registry.com/ns/nginx:latest")
 
-	uc := NewPullSingleImageUseCase(
-		docker, registry, github, fs, nil, logger,
-		"owner", "repo", "token", "workflow",
-		nil,
-	)
+	uc := newTestUseCase(docker, registry, github, fs, logger)
 
 	input := PullSingleImageInput{
 		ImageID:      "nginx:latest",
@@ -194,11 +202,7 @@ func TestPullSingleImageUseCase_Execute_DryRun_ImageNotExists(t *testing.T) {
 	registry.On("ImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(false, nil)
 	registry.On("BuildDestImageID", mock.Anything, mock.Anything, mock.Anything).Return("registry.com/ns/nginx:latest")
 
-	uc := NewPullSingleImageUseCase(
-		docker, registry, github, fs, nil, logger,
-		"owner", "repo", "token", "workflow",
-		nil,
-	)
+	uc := newTestUseCase(docker, registry, github, fs, logger)
 
 	input := PullSingleImageInput{
 		ImageID:      "nginx:latest",
@@ -232,11 +236,8 @@ func TestPullSingleImageUseCase_Execute_ImageExistsInRegistry(t *testing.T) {
 	fs.On("CreateTempFile", mock.Anything).Return("/tmp/test.tar", nil)
 	fs.On("RemoveFile", mock.Anything).Return(nil)
 
-	uc := NewPullSingleImageUseCase(
-		docker, registry, github, fs, httpClient, logger,
-		"owner", "repo", "token", "workflow",
-		nil,
-	)
+	uc := newTestUseCase(docker, registry, github, fs, logger)
+	uc.httpClient = httpClient
 
 	input := PullSingleImageInput{
 		ImageID:      "nginx:latest",
@@ -269,11 +270,8 @@ func TestPullSingleImageUseCase_Execute_ForcePull(t *testing.T) {
 	fs.On("CreateTempFile", mock.Anything).Return("/tmp/test.tar", nil)
 	fs.On("RemoveFile", mock.Anything).Return(nil)
 
-	uc := NewPullSingleImageUseCase(
-		docker, registry, github, fs, httpClient, logger,
-		"owner", "repo", "token", "workflow",
-		nil,
-	)
+	uc := newTestUseCase(docker, registry, github, fs, logger)
+	uc.httpClient = httpClient
 
 	input := PullSingleImageInput{
 		ImageID:      "nginx:latest",
@@ -302,11 +300,7 @@ func TestPullSingleImageUseCase_Execute_CheckLocalError(t *testing.T) {
 	docker.On("ImageExists", mock.Anything, "docker.io/library/nginx:latest").Return(false, errors.New("docker not running"))
 	registry.On("BuildDestImageID", mock.Anything, mock.Anything, mock.Anything).Return("registry.com/ns/nginx:latest")
 
-	uc := NewPullSingleImageUseCase(
-		docker, registry, github, fs, nil, logger,
-		"owner", "repo", "token", "workflow",
-		nil,
-	)
+	uc := newTestUseCase(docker, registry, github, fs, logger)
 
 	input := PullSingleImageInput{
 		ImageID:      "nginx:latest",
@@ -334,11 +328,7 @@ func TestPullSingleImageUseCase_Execute_CheckRegistryError(t *testing.T) {
 	registry.On("ImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(false, errors.New("registry error"))
 	registry.On("BuildDestImageID", mock.Anything, mock.Anything, mock.Anything).Return("registry.com/ns/nginx:latest")
 
-	uc := NewPullSingleImageUseCase(
-		docker, registry, github, fs, nil, logger,
-		"owner", "repo", "token", "workflow",
-		nil,
-	)
+	uc := newTestUseCase(docker, registry, github, fs, logger)
 
 	input := PullSingleImageInput{
 		ImageID:      "nginx:latest",
@@ -370,11 +360,8 @@ func TestPullSingleImageUseCase_Execute_DownloadAndLoadFailure(t *testing.T) {
 	fs.On("CreateTempFile", mock.Anything).Return("/tmp/test.tar", nil)
 	fs.On("RemoveFile", mock.Anything).Return(nil)
 
-	uc := NewPullSingleImageUseCase(
-		docker, registry, github, fs, httpClient, logger,
-		"owner", "repo", "token", "workflow",
-		nil,
-	)
+	uc := newTestUseCase(docker, registry, github, fs, logger)
+	uc.httpClient = httpClient
 
 	input := PullSingleImageInput{
 		ImageID:      "nginx:latest",
@@ -397,7 +384,6 @@ func TestPullSingleImageUseCase_StageCallback(t *testing.T) {
 	github := new(mockGitHubClient)
 	fs := new(mockFileSystem)
 	logger := new(mockLogger)
-	httpClient := &http.Client{}
 
 	var capturedStages []PullStage
 	stageCallback := func(stage PullStage, polls int) {
@@ -413,11 +399,7 @@ func TestPullSingleImageUseCase_StageCallback(t *testing.T) {
 	fs.On("CreateTempFile", mock.Anything).Return("/tmp/test.tar", nil)
 	fs.On("RemoveFile", mock.Anything).Return(nil)
 
-	uc := NewPullSingleImageUseCase(
-		docker, registry, github, fs, httpClient, logger,
-		"owner", "repo", "token", "workflow",
-		stageCallback,
-	)
+	uc := newTestUseCaseWithCallback(docker, registry, github, fs, logger, stageCallback)
 
 	input := PullSingleImageInput{
 		ImageID:      "nginx:latest",
@@ -445,11 +427,7 @@ func TestNewPullSingleImageUseCase(t *testing.T) {
 	fs := new(mockFileSystem)
 	logger := new(mockLogger)
 
-	uc := NewPullSingleImageUseCase(
-		docker, registry, github, fs, nil, logger,
-		"owner", "repo", "token", "workflow",
-		nil,
-	)
+	uc := newTestUseCase(docker, registry, github, fs, logger)
 
 	assert.NotNil(t, uc)
 	assert.NotNil(t, uc.imageValidator)
@@ -467,11 +445,7 @@ func TestPullSingleImageUseCase_CancellationDuringCheckLocal(t *testing.T) {
 	docker.On("ImageExists", mock.Anything, "docker.io/library/redis:latest").Return(false, nil).Maybe()
 	registry.On("BuildDestImageID", mock.Anything, mock.Anything, mock.Anything).Return("registry.example.com/ns/redis:latest")
 
-	uc := NewPullSingleImageUseCase(
-		docker, registry, github, fs, nil, logger,
-		"owner", "repo", "token", "workflow",
-		nil,
-	)
+	uc := newTestUseCase(docker, registry, github, fs, logger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -498,11 +472,7 @@ func TestPullSingleImageUseCase_CancellationDuringCheckRegistry(t *testing.T) {
 	docker.On("ImageExists", mock.Anything, "docker.io/library/redis:latest").Return(false, nil)
 	registry.On("BuildDestImageID", mock.Anything, mock.Anything, mock.Anything).Return("registry.example.com/ns/redis:latest")
 
-	uc := NewPullSingleImageUseCase(
-		docker, registry, github, fs, nil, logger,
-		"owner", "repo", "token", "workflow",
-		nil,
-	)
+	uc := newTestUseCase(docker, registry, github, fs, logger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

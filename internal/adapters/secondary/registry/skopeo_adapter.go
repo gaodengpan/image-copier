@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
-	"strings"
 	"time"
 
 	"github.com/gaodengpan/image-copier/internal/application/ports"
+	"github.com/gaodengpan/image-copier/internal/domain/services"
 	"github.com/gaodengpan/image-copier/internal/domain/validators"
 	"github.com/gaodengpan/image-copier/internal/shared/errors"
 )
@@ -17,8 +17,9 @@ const (
 )
 
 type SkopeoAdapter struct {
-	commandRunner func(ctx context.Context, name string, args ...string) *exec.Cmd
-	validator     *validators.ImageValidator
+	commandRunner  func(ctx context.Context, name string, args ...string) *exec.Cmd
+	validator      *validators.ImageValidator
+	imageIDService *services.ImageIDService
 }
 
 func NewSkopeoAdapter() *SkopeoAdapter {
@@ -26,7 +27,8 @@ func NewSkopeoAdapter() *SkopeoAdapter {
 		commandRunner: func(ctx context.Context, name string, args ...string) *exec.Cmd {
 			return exec.CommandContext(ctx, name, args...)
 		},
-		validator: validators.NewImageValidator(),
+		validator:      validators.NewImageValidator(),
+		imageIDService: services.NewImageIDService(),
 	}
 }
 
@@ -106,104 +108,7 @@ func (a *SkopeoAdapter) CheckImageExists(ctx context.Context, imageID, username,
 }
 
 func (a *SkopeoAdapter) BuildDestImageID(sourceID, registryHost, registryNamespace string) string {
-	var tag, digest, imageName string
-
-	digestIndex := strings.LastIndex(sourceID, "@")
-	if digestIndex != -1 {
-		digest = sourceID[digestIndex:]
-		imageName = sourceID[:digestIndex]
-	} else {
-		imageName = sourceID
-	}
-
-	if digestIndex == -1 {
-		tagIndex := strings.LastIndex(imageName, ":")
-		if tagIndex != -1 {
-			tag = imageName[tagIndex:]
-			imageName = imageName[:tagIndex]
-		}
-	} else {
-		tagIndex := strings.LastIndex(imageName, ":")
-		if tagIndex != -1 {
-			tag = imageName[tagIndex:]
-			imageName = imageName[:tagIndex]
-		}
-	}
-
-	if registryHost == "" {
-		normalized := strings.ReplaceAll(imageName, "/", "_")
-		normalized = strings.ReplaceAll(normalized, ":", "_")
-		normalized = strings.ReplaceAll(normalized, ".", "_")
-		normalized = strings.ReplaceAll(normalized, "-", "_")
-
-		const maxLen = 50
-		maxBaseLen := maxLen
-		if tag != "" {
-			maxBaseLen -= len(tag)
-		}
-		if digest != "" {
-			maxBaseLen -= len(digest)
-		}
-		if maxBaseLen < 0 {
-			maxBaseLen = 0
-		}
-		if len(normalized) > maxBaseLen {
-			normalized = normalized[:maxBaseLen]
-		}
-
-		normalized = normalized + tag + digest
-		return normalized
-	}
-
-	// When registryHost is not empty but registryNamespace is empty
-	if registryNamespace == "" {
-		normalized := strings.ReplaceAll(imageName, "/", "_")
-		normalized = strings.ReplaceAll(normalized, ".", "_")
-		normalized = strings.ReplaceAll(normalized, "-", "_")
-
-		const maxLen = 50
-		maxBaseLen := maxLen
-		if tag != "" {
-			maxBaseLen -= len(tag)
-		}
-		if digest != "" {
-			maxBaseLen -= len(digest)
-		}
-		if maxBaseLen < 0 {
-			maxBaseLen = 0
-		}
-		if len(normalized) > maxBaseLen {
-			normalized = normalized[:maxBaseLen]
-		}
-
-		normalized = strings.TrimRight(normalized, "_")
-		normalized = normalized + tag + digest
-		return fmt.Sprintf("%s/%s", registryHost, normalized)
-	}
-
-	// When both registryHost and registryNamespace are not empty
-	normalized := strings.ReplaceAll(imageName, "/", "_")
-	normalized = strings.ReplaceAll(normalized, ".", "_")
-	normalized = strings.ReplaceAll(normalized, "-", "_")
-
-	const maxLen = 50
-	maxBaseLen := maxLen
-	if tag != "" {
-		maxBaseLen -= len(tag)
-	}
-	if digest != "" {
-		maxBaseLen -= len(digest)
-	}
-	if maxBaseLen < 0 {
-		maxBaseLen = 0
-	}
-	if len(normalized) > maxBaseLen {
-		normalized = normalized[:maxBaseLen]
-	}
-
-	normalized = strings.TrimRight(normalized, "_")
-	normalized = normalized + tag + digest
-	return fmt.Sprintf("%s/%s/%s", registryHost, registryNamespace, normalized)
+	return a.imageIDService.BuildDestImageID(sourceID, registryHost, registryNamespace)
 }
 
 var _ ports.RegistryClient = (*SkopeoAdapter)(nil)

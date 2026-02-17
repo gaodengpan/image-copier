@@ -11,7 +11,6 @@ import (
 	"github.com/gaodengpan/image-copier/internal/application/ports"
 	"github.com/gaodengpan/image-copier/internal/domain/services"
 	"github.com/gaodengpan/image-copier/internal/domain/validators"
-	"github.com/gaodengpan/image-copier/internal/utils"
 	"github.com/gaodengpan/image-copier/pkg/retry"
 )
 
@@ -25,8 +24,10 @@ type PullSingleImageUseCaseImpl struct {
 	registryClient   ports.RegistryClient
 	githubClient     ports.GitHubClient
 	fileSystem       ports.FileSystem
-	httpClient       *http.Client
+	httpClient       ports.HTTPClient
 	logger           ports.Logger
+	systemClient     ports.SystemClient
+	imageIDService   *services.ImageIDService
 	githubOwner      string
 	githubRepo       string
 	githubToken      string
@@ -40,8 +41,10 @@ func NewPullSingleImageUseCase(
 	registryClient ports.RegistryClient,
 	githubClient ports.GitHubClient,
 	fileSystem ports.FileSystem,
-	httpClient *http.Client,
+	httpClient ports.HTTPClient,
 	logger ports.Logger,
+	systemClient ports.SystemClient,
+	imageIDService *services.ImageIDService,
 	githubOwner, githubRepo, githubToken, githubWorkflowID string,
 	stageCallback func(stage PullStage, polls int),
 ) *PullSingleImageUseCaseImpl {
@@ -52,6 +55,8 @@ func NewPullSingleImageUseCase(
 		fileSystem:       fileSystem,
 		httpClient:       httpClient,
 		logger:           logger,
+		systemClient:     systemClient,
+		imageIDService:   imageIDService,
 		githubOwner:      githubOwner,
 		githubRepo:       githubRepo,
 		githubToken:      githubToken,
@@ -391,7 +396,7 @@ func (uc *PullSingleImageUseCaseImpl) prePullValidate(ctx context.Context) error
 
 	uc.logger.Debugf("Performing pre-pull validation...")
 
-	skopeoExists, err := utils.CheckCommandExists("skopeo")
+	skopeoExists, err := uc.systemClient.CommandExists(ctx, "skopeo")
 	if err != nil {
 		uc.logger.Errorf("Error checking skopeo command: %v", err)
 		return fmt.Errorf("error checking skopeo command: %w", err)
@@ -400,7 +405,7 @@ func (uc *PullSingleImageUseCaseImpl) prePullValidate(ctx context.Context) error
 		validationErrors = append(validationErrors, "skopeo command not found in PATH")
 	}
 
-	dockerExists, err := utils.CheckCommandExists("docker")
+	dockerExists, err := uc.systemClient.CommandExists(ctx, "docker")
 	if err != nil {
 		uc.logger.Errorf("Error checking docker command: %v", err)
 		return fmt.Errorf("error checking docker command: %w", err)
@@ -410,7 +415,7 @@ func (uc *PullSingleImageUseCaseImpl) prePullValidate(ctx context.Context) error
 	}
 
 	if skopeoExists && dockerExists {
-		_, err := utils.CheckDockerService()
+		_, err := uc.systemClient.DockerRunning(ctx)
 		if err != nil {
 			validationErrors = append(validationErrors, fmt.Sprintf("Docker service is not running: %v", err))
 		}
