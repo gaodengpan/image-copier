@@ -140,7 +140,7 @@ func (a *SkopeoAdapter) BuildDestImageID(sourceID, registryHost, registryNamespa
 		normalized = strings.ReplaceAll(normalized, ".", "_")
 		normalized = strings.ReplaceAll(normalized, "-", "_")
 
-		const maxLen = 115
+		const maxLen = 50
 		maxBaseLen := maxLen
 		if tag != "" {
 			maxBaseLen -= len(tag)
@@ -165,7 +165,7 @@ func (a *SkopeoAdapter) BuildDestImageID(sourceID, registryHost, registryNamespa
 		normalized = strings.ReplaceAll(normalized, ".", "_")
 		normalized = strings.ReplaceAll(normalized, "-", "_")
 
-		const maxLen = 115
+		const maxLen = 50
 		maxBaseLen := maxLen
 		if tag != "" {
 			maxBaseLen -= len(tag)
@@ -190,7 +190,7 @@ func (a *SkopeoAdapter) BuildDestImageID(sourceID, registryHost, registryNamespa
 	normalized = strings.ReplaceAll(normalized, ".", "_")
 	normalized = strings.ReplaceAll(normalized, "-", "_")
 
-	const maxLen = 115
+	const maxLen = 50
 	maxBaseLen := maxLen
 	if tag != "" {
 		maxBaseLen -= len(tag)

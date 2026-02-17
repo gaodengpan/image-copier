@@ -2,6 +2,7 @@ package registry
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -88,6 +89,17 @@ func TestSkopeoAdapter_BuildDestImageID_WithDigest(t *testing.T) {
 
 	result := adapter.BuildDestImageID("nginx@sha256:abc123", "registry.com", "ns")
 	assert.Contains(t, result, "@sha256:abc123")
+}
+
+func TestSkopeoAdapter_BuildDestImageID_MaxLength(t *testing.T) {
+	adapter := NewSkopeoAdapter()
+
+	longName := "myverylongrepositorynamewithalotofcharacters_that exceedsthe limit of fifty characters"
+	result := adapter.BuildDestImageID(longName+":v1.0", "registry.com", "ns")
+
+	assert.LessOrEqual(t, len(result), 50+len("registry.com/ns/")+len(":v1.0"))
+	assert.True(t, strings.HasPrefix(result, "registry.com/ns/"))
+	assert.True(t, strings.HasSuffix(result, ":v1.0"))
 }
 
 func TestSkopeoAdapter_CheckImageExists_InvalidImageName(t *testing.T) {

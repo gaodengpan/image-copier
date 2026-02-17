@@ -506,6 +506,81 @@ func TestSetupLogger(t *testing.T) {
 	})
 }
 
+func TestCalculateAdaptiveWorkerCount(t *testing.T) {
+	tests := []struct {
+		name          string
+		userSpecified bool
+		userValue     int
+		taskCount     int
+		cpuCount      int
+		expected      int
+	}{
+		{
+			name:          "user not specified, more tasks than cpu*4",
+			userSpecified: false,
+			userValue:     0,
+			taskCount:     100,
+			cpuCount:      4,
+			expected:      16, // cpuCount * 4 = 16
+		},
+		{
+			name:          "user not specified, fewer tasks than cpu*4",
+			userSpecified: false,
+			userValue:     0,
+			taskCount:     5,
+			cpuCount:      8,
+			expected:      5, // taskCount < cpuCount * 4
+		},
+		{
+			name:          "user not specified, exactly cpu*4",
+			userSpecified: false,
+			userValue:     0,
+			taskCount:     16,
+			cpuCount:      4,
+			expected:      16,
+		},
+		{
+			name:          "user not specified, single task",
+			userSpecified: false,
+			userValue:     0,
+			taskCount:     1,
+			cpuCount:      4,
+			expected:      1,
+		},
+		{
+			name:          "user not specified, zero tasks",
+			userSpecified: false,
+			userValue:     0,
+			taskCount:     0,
+			cpuCount:      4,
+			expected:      1, // minimum is 1
+		},
+		{
+			name:          "user specified, uses user value",
+			userSpecified: true,
+			userValue:     10,
+			taskCount:     100,
+			cpuCount:      4,
+			expected:      10,
+		},
+		{
+			name:          "user specified, zero tasks still uses user value",
+			userSpecified: true,
+			userValue:     5,
+			taskCount:     0,
+			cpuCount:      4,
+			expected:      5,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := calculateAdaptiveWorkerCount(tt.userSpecified, tt.userValue, tt.taskCount, tt.cpuCount)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
 func TestCLIPresenter(t *testing.T) {
 	presenter := NewCLIPresenter()
 

@@ -197,6 +197,17 @@ func (p *Progress) UpdateStage(workerIdx int, info StageInfo) {
 	}
 }
 
+// GetImages returns a copy of all images with their status.
+// This is useful for building result summaries after processing completes.
+func (p *Progress) GetImages() []*ImageProgress {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	result := make([]*ImageProgress, len(p.images))
+	copy(result, p.images)
+	return result
+}
+
 func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s

@@ -96,6 +96,8 @@ Supports two modes:
 			baseCfg := CreateCoreConfigFromConfig(cfg, force, dryRun)
 			ctx := context.Background()
 
+			jobsSpecified := cmd.Flags().Changed("jobs")
+
 			// === YAML manifest 模式（-f 参数）===
 			if filePath != "" {
 				tasks, err := readSyncManifest(filePath, arch, osType)
@@ -106,6 +108,7 @@ Supports two modes:
 					fmt.Println("No images found in manifest.")
 					return nil
 				}
+				workerCount = calculateAdaptiveWorkerCount(jobsSpecified, workerCount, len(tasks), runtime.NumCPU())
 				return processSyncTasks(logger, baseCfg, tasks, workerCount, force, dryRun, verbose, ctx)
 			}
 
@@ -128,6 +131,7 @@ Supports two modes:
 				}
 			}
 
+			workerCount = calculateAdaptiveWorkerCount(jobsSpecified, workerCount, len(tasks), runtime.NumCPU())
 			return processSyncTasks(logger, baseCfg, tasks, workerCount, force, dryRun, verbose, ctx)
 		},
 	}
@@ -202,6 +206,21 @@ func readSyncManifest(path, defaultArch, defaultOs string) ([]syncTask, error) {
 	return tasks, nil
 }
 
+func calculateAdaptiveWorkerCount(userSpecified bool, userValue, taskCount, cpuCount int) int {
+	if userSpecified {
+		return userValue
+	}
+
+	maxWorkers := cpuCount * 4
+	if taskCount < maxWorkers {
+		maxWorkers = taskCount
+	}
+	if maxWorkers < 1 {
+		maxWorkers = 1
+	}
+	return maxWorkers
+}
+
 func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syncTask,
 	workerCount int, force, dryRun, verbose bool, ctx context.Context) error {
 
@@ -270,20 +289,6 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syn
 	}
 
 	// === Phase 2: Sync ===
-	// Optimize worker count for sync phase
-	if workerCount > len(needsSync) {
-		workerCount = len(needsSync)
-	}
-	if workerCount < 1 {
-		workerCount = 1
-	}
-
-	// Limit worker count by CPU cores to prevent excessive resource usage
-	maxWorkersByCPU := runtime.NumCPU()
-	if workerCount > maxWorkersByCPU {
-		logger.Debugf("Reducing sync worker count from %d to %d based on CPU cores", workerCount, maxWorkersByCPU)
-		workerCount = maxWorkersByCPU
-	}
 
 	// Progress tracks all images (needsSync + synced) for unified summary display
 	totalCount := len(needsSync) + len(synced)
@@ -336,12 +341,18 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syn
 
 		sem := make(chan struct{}, workerCount)
 		var wg sync.WaitGroup
+		var taskIdx int64 = 0
 
 		for i := 0; i < workerCount; i++ {
 			wg.Add(1)
 			go func(workerIdx int) {
 				defer wg.Done()
-				for idx := 0; idx < len(syncTasks); idx++ {
+				for {
+					idx := int(atomic.AddInt64(&taskIdx, 1) - 1)
+					if idx >= len(syncTasks) {
+						break
+					}
+
 					select {
 					case <-ctx.Done():
 						return
@@ -384,17 +395,59 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syn
 
 	duration := time.Since(startTime)
 
-	// Build image results for summary
+	// Build image results from actual progress status
+	images := p.GetImages()
 	imageResults := make([]ImageResult, 0, totalCount)
-	for _, t := range needsSync {
-		imageResults = append(imageResults, ImageResult{
-			Image:   t.displayName(),
-			Success: true,
-		})
+
+	// needsSync images are at indices 0 to len(needsSync)-1
+	for i := 0; i < len(needsSync); i++ {
+		if i >= len(images) || images[i] == nil {
+			continue
+		}
+		img := images[i]
+		switch img.Status {
+		case progress.StatusCompleted:
+			imageResults = append(imageResults, ImageResult{
+				Image:   img.Image,
+				Success: true,
+			})
+		case progress.StatusSkipped:
+			imageResults = append(imageResults, ImageResult{
+				Image:   img.Image,
+				Skipped: true,
+			})
+		case progress.StatusDryRun:
+			imageResults = append(imageResults, ImageResult{
+				Image:  img.Image,
+				DryRun: true,
+			})
+		case progress.StatusFailed:
+			errMsg := ""
+			if img.Error != nil {
+				errMsg = img.Error.Error()
+			}
+			imageResults = append(imageResults, ImageResult{
+				Image:  img.Image,
+				Failed: true,
+				Error:  errMsg,
+			})
+		default:
+			// Running or unknown status - treat as success if no error
+			imageResults = append(imageResults, ImageResult{
+				Image:   img.Image,
+				Success: true,
+			})
+		}
 	}
-	for _, t := range synced {
+
+	// synced images are at indices len(needsSync) onwards
+	for i := len(needsSync); i < len(synced)+len(needsSync); i++ {
+		if i >= len(images) || images[i] == nil {
+			continue
+		}
+		img := images[i]
 		imageResults = append(imageResults, ImageResult{
-			Image:   t.displayName(),
+			Image:   img.Image,
 			Skipped: true,
 		})
 	}
