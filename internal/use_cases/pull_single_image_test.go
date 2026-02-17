@@ -125,7 +125,7 @@ func TestPullSingleImageUseCase_Execute_SkippedWhenLocalExists(t *testing.T) {
 	fs := new(mockFileSystem)
 	logger := new(mockLogger)
 
-	docker.On("ListImages", mock.Anything).Return([]string{"docker.io/library/nginx:latest"}, nil)
+	docker.On("ImageExists", mock.Anything, "nginx").Return(true, nil)
 	registry.On("BuildDestImageID", mock.Anything, mock.Anything, mock.Anything).Return("registry.com/ns/nginx:latest")
 
 	uc := NewPullSingleImageUseCase(
@@ -155,7 +155,8 @@ func TestPullSingleImageUseCase_Execute_DryRun_ImageExistsInRegistry(t *testing.
 	fs := new(mockFileSystem)
 	logger := new(mockLogger)
 
-	docker.On("ListImages", mock.Anything).Return([]string{}, nil)
+	docker.On("ImageExists", mock.Anything, "nginx:latest").Return(false, nil)
+	docker.On("ImageExists", mock.Anything, "docker.io/library/nginx:latest").Return(false, nil)
 	registry.On("ImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(true, nil)
 	registry.On("BuildDestImageID", mock.Anything, mock.Anything, mock.Anything).Return("registry.com/ns/nginx:latest")
 
@@ -187,7 +188,8 @@ func TestPullSingleImageUseCase_Execute_DryRun_ImageNotExists(t *testing.T) {
 	fs := new(mockFileSystem)
 	logger := new(mockLogger)
 
-	docker.On("ListImages", mock.Anything).Return([]string{}, nil)
+	docker.On("ImageExists", mock.Anything, "nginx:latest").Return(false, nil)
+	docker.On("ImageExists", mock.Anything, "docker.io/library/nginx:latest").Return(false, nil)
 	registry.On("ImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(false, nil)
 	registry.On("BuildDestImageID", mock.Anything, mock.Anything, mock.Anything).Return("registry.com/ns/nginx:latest")
 
@@ -220,7 +222,8 @@ func TestPullSingleImageUseCase_Execute_ImageExistsInRegistry(t *testing.T) {
 	logger := new(mockLogger)
 	httpClient := &http.Client{}
 
-	docker.On("ListImages", mock.Anything).Return([]string{}, nil)
+	docker.On("ImageExists", mock.Anything, "nginx:latest").Return(false, nil)
+	docker.On("ImageExists", mock.Anything, "docker.io/library/nginx:latest").Return(false, nil)
 	registry.On("ImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(true, nil)
 	registry.On("BuildDestImageID", mock.Anything, mock.Anything, mock.Anything).Return("registry.com/ns/nginx:latest")
 	registry.On("SaveImageToFile", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
@@ -284,7 +287,7 @@ func TestPullSingleImageUseCase_Execute_ForcePull(t *testing.T) {
 	output, err := uc.Execute(context.Background(), input)
 	assert.NoError(t, err)
 	assert.False(t, output.Skipped)
-	docker.AssertNotCalled(t, "ListImages")
+	docker.AssertNotCalled(t, "ImageExists")
 }
 
 func TestPullSingleImageUseCase_Execute_CheckLocalError(t *testing.T) {
@@ -294,7 +297,8 @@ func TestPullSingleImageUseCase_Execute_CheckLocalError(t *testing.T) {
 	fs := new(mockFileSystem)
 	logger := new(mockLogger)
 
-	docker.On("ListImages", mock.Anything).Return([]string{}, errors.New("docker not running"))
+	docker.On("ImageExists", mock.Anything, "nginx:latest").Return(false, errors.New("docker not running"))
+	docker.On("ImageExists", mock.Anything, "docker.io/library/nginx:latest").Return(false, errors.New("docker not running"))
 	registry.On("BuildDestImageID", mock.Anything, mock.Anything, mock.Anything).Return("registry.com/ns/nginx:latest")
 
 	uc := NewPullSingleImageUseCase(
@@ -324,7 +328,8 @@ func TestPullSingleImageUseCase_Execute_CheckRegistryError(t *testing.T) {
 	fs := new(mockFileSystem)
 	logger := new(mockLogger)
 
-	docker.On("ListImages", mock.Anything).Return([]string{}, nil)
+	docker.On("ImageExists", mock.Anything, "nginx:latest").Return(false, nil)
+	docker.On("ImageExists", mock.Anything, "docker.io/library/nginx:latest").Return(false, nil)
 	registry.On("ImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(false, errors.New("registry error"))
 	registry.On("BuildDestImageID", mock.Anything, mock.Anything, mock.Anything).Return("registry.com/ns/nginx:latest")
 
@@ -356,7 +361,8 @@ func TestPullSingleImageUseCase_Execute_DownloadAndLoadFailure(t *testing.T) {
 	logger := new(mockLogger)
 	httpClient := &http.Client{}
 
-	docker.On("ListImages", mock.Anything).Return([]string{}, nil)
+	docker.On("ImageExists", mock.Anything, "nginx:latest").Return(false, nil)
+	docker.On("ImageExists", mock.Anything, "docker.io/library/nginx:latest").Return(false, nil)
 	registry.On("ImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(true, nil)
 	registry.On("BuildDestImageID", mock.Anything, mock.Anything, mock.Anything).Return("registry.com/ns/nginx:latest")
 	registry.On("SaveImageToFile", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(errors.New("download failed"))
@@ -397,7 +403,8 @@ func TestPullSingleImageUseCase_StageCallback(t *testing.T) {
 		capturedStages = append(capturedStages, stage)
 	}
 
-	docker.On("ListImages", mock.Anything).Return([]string{}, nil)
+	docker.On("ImageExists", mock.Anything, "nginx:latest").Return(false, nil)
+	docker.On("ImageExists", mock.Anything, "docker.io/library/nginx:latest").Return(false, nil)
 	registry.On("ImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(true, nil)
 	registry.On("BuildDestImageID", mock.Anything, mock.Anything, mock.Anything).Return("registry.com/ns/nginx:latest")
 	registry.On("SaveImageToFile", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
@@ -455,7 +462,8 @@ func TestPullSingleImageUseCase_CancellationDuringCheckLocal(t *testing.T) {
 	fs := new(mockFileSystem)
 	logger := new(mockLogger)
 
-	docker.On("ListImages", mock.Anything).Return([]string{}, nil).Maybe()
+	docker.On("ImageExists", mock.Anything, "redis:latest").Return(false, nil).Maybe()
+	docker.On("ImageExists", mock.Anything, "docker.io/library/redis:latest").Return(false, nil).Maybe()
 	registry.On("BuildDestImageID", mock.Anything, mock.Anything, mock.Anything).Return("registry.example.com/ns/redis:latest")
 
 	uc := NewPullSingleImageUseCase(
@@ -485,7 +493,8 @@ func TestPullSingleImageUseCase_CancellationDuringCheckRegistry(t *testing.T) {
 	fs := new(mockFileSystem)
 	logger := new(mockLogger)
 
-	docker.On("ListImages", mock.Anything).Return([]string{}, nil)
+	docker.On("ImageExists", mock.Anything, "redis:latest").Return(false, nil)
+	docker.On("ImageExists", mock.Anything, "docker.io/library/redis:latest").Return(false, nil)
 	registry.On("BuildDestImageID", mock.Anything, mock.Anything, mock.Anything).Return("registry.example.com/ns/redis:latest")
 
 	uc := NewPullSingleImageUseCase(

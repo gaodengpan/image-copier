@@ -21,18 +21,12 @@ var (
 )
 
 type PullSingleImageUseCaseImpl struct {
-	dockerClient   ports.DockerClient
-	registryClient ports.RegistryClient
-	githubClient   ports.GitHubClient
-	fileSystem     ports.FileSystem
-	httpClient     *http.Client
-	logger         interface {
-		Infof(format string, args ...interface{})
-		Debugf(format string, args ...interface{})
-		Errorf(format string, args ...interface{})
-		Info(args ...interface{})
-		Warn(args ...interface{})
-	}
+	dockerClient     ports.DockerClient
+	registryClient   ports.RegistryClient
+	githubClient     ports.GitHubClient
+	fileSystem       ports.FileSystem
+	httpClient       *http.Client
+	logger           Logger
 	githubOwner      string
 	githubRepo       string
 	githubToken      string
@@ -47,13 +41,7 @@ func NewPullSingleImageUseCase(
 	githubClient ports.GitHubClient,
 	fileSystem ports.FileSystem,
 	httpClient *http.Client,
-	logger interface {
-		Infof(format string, args ...interface{})
-		Debugf(format string, args ...interface{})
-		Errorf(format string, args ...interface{})
-		Info(args ...interface{})
-		Warn(args ...interface{})
-	},
+	logger Logger,
 	githubOwner, githubRepo, githubToken, githubWorkflowID string,
 	stageCallback func(stage PullStage, polls int),
 ) *PullSingleImageUseCaseImpl {
@@ -169,15 +157,20 @@ func (uc *PullSingleImageUseCaseImpl) checkLocalImageExists(ctx context.Context,
 
 	normalizedID := normalizeSourceID(imageID)
 
-	images, err := uc.dockerClient.ListImages(ctx)
+	exists, err := uc.dockerClient.ImageExists(ctx, imageID)
 	if err != nil {
 		return false, err
 	}
+	if exists {
+		return true, nil
+	}
 
-	for _, img := range images {
-		if img == imageID || img == normalizedID {
-			return true, nil
+	if normalizedID != imageID {
+		exists, err := uc.dockerClient.ImageExists(ctx, normalizedID)
+		if err != nil {
+			return false, err
 		}
+		return exists, nil
 	}
 
 	return false, nil

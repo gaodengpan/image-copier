@@ -252,6 +252,8 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syn
 		task         syncTask
 		remoteExists bool
 		localExists  bool
+		remoteError  error
+		localError   error
 	}
 	results := make([]diffResult, len(tasks))
 
@@ -277,9 +279,24 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syn
 
 			sourceID := task.Source
 			destID := registryClient.BuildDestImageID(sourceID, baseCfg.Registry.Host, baseCfg.Registry.Namespace)
-			remoteExists, _ := registryClient.CheckImageExists(ctxDiff, destID, baseCfg.Registry.Username, baseCfg.Registry.Password)
-			localExists, _ := dockerClient.ImageExists(ctxDiff, task.Source)
-			results[idx] = diffResult{task: task, remoteExists: remoteExists, localExists: localExists}
+			remoteExists, remoteErr := registryClient.CheckImageExists(ctxDiff, destID, baseCfg.Registry.Username, baseCfg.Registry.Password)
+			localExists, localErr := dockerClient.ImageExists(ctxDiff, task.Source)
+
+			// Log errors but continue - treat check failure as "not exists" to allow retry
+			if remoteErr != nil {
+				logger.Warnf("Failed to check remote image %s: %v", destID, remoteErr)
+			}
+			if localErr != nil {
+				logger.Warnf("Failed to check local image %s: %v", task.Source, localErr)
+			}
+
+			results[idx] = diffResult{
+				task:         task,
+				remoteExists: remoteExists,
+				localExists:  localExists,
+				remoteError:  remoteErr,
+				localError:   localErr,
+			}
 		}(i, t)
 	}
 	wg.Wait()

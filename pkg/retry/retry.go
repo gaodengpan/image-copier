@@ -123,8 +123,9 @@ func calculateBackoff(attempt int, initialInterval, maxInterval time.Duration) t
 	exponential := float64(initialInterval) * math.Pow(2, float64(attempt-1))
 
 	// Add jitter: +/- 10% random variation
-	// Use rand.NewSource for thread safety
-	jitter := exponential * 0.1 * (2*rand.Float64() - 1) // Random value in [-0.1, +0.1] range
+	// Use local random source for thread safety
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	jitter := exponential * 0.1 * (2*rng.Float64() - 1) // Random value in [-0.1, +0.1] range
 	backoff := float64(exponential) + jitter
 
 	// Clamp to max interval
