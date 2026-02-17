@@ -34,6 +34,7 @@ type PullCommandOptions struct {
 	DryRun      bool
 	Verbose     bool
 	Output      string
+	Timeout     time.Duration
 }
 
 // NewPullCommandWithConfigProvider creates a new pull command that accepts a ConfigProvider
@@ -54,6 +55,7 @@ func NewPullCommandWithConfigProviderAndOptions(configProvider config.ConfigProv
 		dryRun      = opts.DryRun
 		verbose     = opts.Verbose
 		output      = opts.Output
+		timeout     = opts.Timeout
 	)
 
 	cmd := &cobra.Command{
@@ -96,7 +98,16 @@ Supports two modes:
 			}
 
 			baseCfg := CreateCoreConfigFromConfig(cfg, force, dryRun)
-			ctx := context.Background()
+			ctxNoTimeout := context.Background()
+
+			var ctx context.Context
+			var cancel context.CancelFunc
+			if timeout > 0 {
+				ctx, cancel = context.WithTimeout(context.Background(), timeout)
+				defer cancel()
+			} else {
+				ctx = context.Background()
+			}
 
 			jobsSpecified := cmd.Flags().Changed("jobs")
 
@@ -111,7 +122,7 @@ Supports two modes:
 					return nil
 				}
 				workerCount = calculateAdaptiveWorkerCount(jobsSpecified, workerCount, len(tasks), runtime.NumCPU())
-				return processSyncTasks(logger, baseCfg, tasks, workerCount, force, dryRun, verbose, ctx, output)
+				return processSyncTasks(logger, baseCfg, tasks, workerCount, force, dryRun, verbose, ctxNoTimeout, ctx, output)
 			}
 
 			// === 命令式模式（CLI 参数）===
@@ -134,7 +145,7 @@ Supports two modes:
 			}
 
 			workerCount = calculateAdaptiveWorkerCount(jobsSpecified, workerCount, len(tasks), runtime.NumCPU())
-			return processSyncTasks(logger, baseCfg, tasks, workerCount, force, dryRun, verbose, ctx, output)
+			return processSyncTasks(logger, baseCfg, tasks, workerCount, force, dryRun, verbose, ctxNoTimeout, ctx, output)
 		},
 	}
 
@@ -147,6 +158,7 @@ Supports two modes:
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show what would be done without making changes")
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show detailed log output above progress bars")
 	cmd.Flags().StringVarP(&output, "output", "o", "text", "Output format: text or json")
+	cmd.Flags().DurationVar(&timeout, "timeout", 0, "Overall timeout for batch sync (e.g., 5m, 1h). Default: no timeout")
 
 	cmd.SilenceUsage = true
 
@@ -225,7 +237,7 @@ func calculateAdaptiveWorkerCount(userSpecified bool, userValue, taskCount, cpuC
 }
 
 func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syncTask,
-	workerCount int, force, dryRun, verbose bool, ctx context.Context, outputFormat string) error {
+	workerCount int, force, dryRun, verbose bool, ctxDiff, ctxSync context.Context, outputFormat string) error {
 
 	var presenter PullPresenter
 	if outputFormat == "json" {
@@ -257,10 +269,16 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syn
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
+			select {
+			case <-ctxDiff.Done():
+				return
+			default:
+			}
+
 			sourceID := task.Source
 			destID := registryClient.BuildDestImageID(sourceID, baseCfg.Registry.Host, baseCfg.Registry.Namespace)
-			remoteExists, _ := registryClient.CheckImageExists(ctx, destID, baseCfg.Registry.Username, baseCfg.Registry.Password)
-			localExists, _ := dockerClient.ImageExists(ctx, task.Source)
+			remoteExists, _ := registryClient.CheckImageExists(ctxDiff, destID, baseCfg.Registry.Username, baseCfg.Registry.Password)
+			localExists, _ := dockerClient.ImageExists(ctxDiff, task.Source)
 			results[idx] = diffResult{task: task, remoteExists: remoteExists, localExists: localExists}
 		}(i, t)
 	}
@@ -393,20 +411,46 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syn
 						break
 					}
 
+					// 1. Acquire semaphore
+					sem <- struct{}{}
+					// 2. defer release semaphore (always runs)
+					defer func() {
+						<-sem
+					}()
+
+					// 3. Check context cancellation BEFORE processing
 					select {
-					case <-ctx.Done():
+					case <-ctxSync.Done():
+						if ctxSync.Err() == context.DeadlineExceeded {
+							p.UpdateStatus(idx, progress.StatusCancelled, fmt.Errorf("sync cancelled: timeout exceeded"))
+							atomic.AddInt32(&failCount, 1)
+						}
+						// defer will release semaphore, return without processing
 						return
 					default:
 					}
 
-					sem <- struct{}{}
-					p.UpdateStatus(idx, progress.StatusRunning, nil)
-					taskStart := time.Now()
+					// 4. Register defer for increment BEFORE processing (runs after normal completion, or on any return)
+					defer p.Increment()
 
-					err := processor.Process(ctx, syncTasks[idx], p, workerIdx)
+					// 5. Mark as running
+					p.UpdateStatus(idx, progress.StatusRunning, nil)
+
+					taskStart := time.Now()
+					err := processor.Process(ctxSync, syncTasks[idx], p, workerIdx)
 					elapsed := time.Since(taskStart)
 
-					if err != nil {
+					// Check context after processing - this catches timeout/cancellation
+					// even when the process was killed (signal: killed)
+					if ctxSync.Err() != nil {
+						if ctxSync.Err() == context.DeadlineExceeded {
+							p.UpdateStatus(idx, progress.StatusCancelled, fmt.Errorf("sync cancelled: timeout exceeded"))
+							atomic.AddInt32(&failCount, 1)
+						} else if ctxSync.Err() == context.Canceled {
+							p.UpdateStatus(idx, progress.StatusCancelled, ctxSync.Err())
+							atomic.AddInt32(&failCount, 1)
+						}
+					} else if err != nil {
 						if errors.Is(err, use_cases.ErrSkipped) {
 							p.UpdateStatus(idx, progress.StatusSkipped, nil)
 						} else if errors.Is(err, use_cases.ErrDryRun) {
@@ -421,8 +465,6 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syn
 
 					p.SetDuration(idx, elapsed)
 					p.UpdateWorker(workerIdx, "")
-					p.Increment()
-					<-sem
 				}
 			}(i)
 		}
@@ -480,6 +522,18 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syn
 				Failed: true,
 				Error:  errMsg,
 			})
+		case progress.StatusCancelled:
+			errMsg := ""
+			if img.Error != nil {
+				errMsg = img.Error.Error()
+			}
+			imageResults = append(imageResults, ImageResult{
+				Image:     t.Source,
+				Arch:      t.Arch,
+				Os:        t.Os,
+				Cancelled: true,
+				Error:     errMsg,
+			})
 		default:
 			imageResults = append(imageResults, ImageResult{
 				Image:   t.Source,
@@ -514,7 +568,16 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syn
 	}, imageResults)
 
 	if failCount > 0 {
-		return fmt.Errorf("%d image(s) failed to sync", failCount)
+		errMsg := ""
+		if ctxSync.Err() == context.DeadlineExceeded {
+			errMsg = " (timeout exceeded)"
+		}
+		// In JSON mode, the JSON output has already been printed above.
+		// Return nil to avoid printing error to stderr, which would pollute JSON output.
+		if outputFormat == "json" {
+			return nil
+		}
+		return fmt.Errorf("%d image(s) failed to sync%s", failCount, errMsg)
 	}
 
 	return nil

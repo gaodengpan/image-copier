@@ -99,10 +99,18 @@ func (uc *PullSingleImageUseCaseImpl) Execute(ctx context.Context, input PullSin
 		}
 	}
 
+	if ctx.Err() != nil {
+		return PullSingleImageOutput{}, ctx.Err()
+	}
+
 	uc.notifyStage(StageCheckRegistry, 0)
 	exists, err := uc.registryClient.ImageExists(ctx, destImageID, input.RegistryUser, input.RegistryPass)
 	if err != nil {
 		return PullSingleImageOutput{}, fmt.Errorf("failed to check if image exists: %w", err)
+	}
+
+	if ctx.Err() != nil {
+		return PullSingleImageOutput{}, ctx.Err()
 	}
 
 	if input.DryRun {
@@ -123,12 +131,20 @@ func (uc *PullSingleImageUseCaseImpl) Execute(ctx context.Context, input PullSin
 			return PullSingleImageOutput{}, fmt.Errorf("failed to trigger workflow: %w", err)
 		}
 
+		if ctx.Err() != nil {
+			return PullSingleImageOutput{}, ctx.Err()
+		}
+
 		uc.notifyStage(StageWaitWorkflow, 0)
 		if err := uc.waitForWorkflow(ctx, runID); err != nil {
 			return PullSingleImageOutput{}, fmt.Errorf("workflow failed: %w", err)
 		}
 	} else {
 		uc.logger.Info("Image already exists in destination registry")
+	}
+
+	if ctx.Err() != nil {
+		return PullSingleImageOutput{}, ctx.Err()
 	}
 
 	uc.notifyStage(StageDownloadImage, 0)
@@ -147,6 +163,10 @@ func (uc *PullSingleImageUseCaseImpl) notifyStage(stage PullStage, polls int) {
 }
 
 func (uc *PullSingleImageUseCaseImpl) checkLocalImageExists(ctx context.Context, imageID string) (bool, error) {
+	if ctx.Err() != nil {
+		return false, ctx.Err()
+	}
+
 	normalizedID := normalizeSourceID(imageID)
 
 	images, err := uc.dockerClient.ListImages(ctx)

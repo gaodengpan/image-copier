@@ -17,7 +17,6 @@ const (
 	DockerImageFormat = "{{.Repository}}:{{.Tag}}"
 	ListImagesTimeout = 15 * time.Second
 	CheckLocalTimeout = 10 * time.Second
-	DockerLoadTimeout = 60 * time.Second
 )
 
 type ExecDockerAdapter struct {
@@ -81,9 +80,6 @@ func (a *ExecDockerAdapter) ListImages(ctx context.Context) ([]string, error) {
 }
 
 func (a *ExecDockerAdapter) LoadImage(ctx context.Context, tarPath string) error {
-	ctx, cancel := context.WithTimeout(ctx, DockerLoadTimeout)
-	defer cancel()
-
 	cmd := a.commandRunner(ctx, DockerCommand, "load", "-i", tarPath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {

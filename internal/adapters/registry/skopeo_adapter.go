@@ -13,8 +13,7 @@ import (
 )
 
 const (
-	SkopeoCommand     = "skopeo"
-	SkopeoCopyTimeout = 120 * time.Second
+	SkopeoCommand = "skopeo"
 )
 
 type SkopeoAdapter struct {
@@ -68,9 +67,6 @@ func (a *SkopeoAdapter) SaveImageToFile(ctx context.Context, imageID, imageTag, 
 	if !a.validator.ValidateCredentials(username, password) {
 		return errors.NewRegistryError("SaveImageToFile", "invalid credentials", nil)
 	}
-
-	ctx, cancel := context.WithTimeout(ctx, SkopeoCopyTimeout)
-	defer cancel()
 
 	creds := fmt.Sprintf("%s:%s", username, password)
 	cmd := a.commandRunner(ctx, SkopeoCommand, "copy", "--src-creds="+creds, "docker://"+imageID, "docker-archive:"+outputPath+":"+imageTag)

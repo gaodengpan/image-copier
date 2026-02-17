@@ -31,6 +31,7 @@ const (
 	StatusFailed
 	StatusSkipped
 	StatusDryRun
+	StatusCancelled
 )
 
 func (s ImageStatus) String() string {
@@ -47,6 +48,8 @@ func (s ImageStatus) String() string {
 		return "skipped"
 	case StatusDryRun:
 		return "dry-run"
+	case StatusCancelled:
+		return "cancelled"
 	default:
 		return "unknown"
 	}
@@ -302,6 +305,8 @@ func (p *Progress) AbortWorkers() {
 	if p.noOutput {
 		return
 	}
+	// Abort mainBar as well to prevent deadlock
+	p.mainBar.Abort(true)
 	for _, bar := range p.workerBars {
 		bar.Abort(true)
 	}
@@ -348,7 +353,7 @@ func (p *Progress) printSummary() {
 
 	totalDuration := time.Since(p.startedAt)
 
-	var succeeded, failed, skipped, dryRun int
+	var succeeded, failed, skipped, dryRun, cancelled int
 
 	for _, img := range p.images {
 		if img == nil {
@@ -363,15 +368,19 @@ func (p *Progress) printSummary() {
 			skipped++
 		case StatusDryRun:
 			dryRun++
+		case StatusCancelled:
+			cancelled++
 		}
 	}
 
+	totalFailed := failed + cancelled
+
 	if dryRun > 0 {
 		fmt.Printf("\nSummary: %d succeeded, %d skipped, %d dry-run, %d failed | Total: %s\n",
-			succeeded, skipped, dryRun, failed, formatDuration(totalDuration))
+			succeeded, skipped, dryRun, totalFailed, formatDuration(totalDuration))
 	} else {
 		fmt.Printf("\nSummary: %d succeeded, %d skipped, %d failed | Total: %s\n",
-			succeeded, skipped, failed, formatDuration(totalDuration))
+			succeeded, skipped, totalFailed, formatDuration(totalDuration))
 	}
 
 	for _, img := range p.images {
@@ -388,6 +397,12 @@ func (p *Progress) printSummary() {
 			fmt.Printf("  ~ %s (%s)\n", img.Image, dur)
 		case StatusFailed:
 			msg := fmt.Sprintf("  ✗ %s (%s)", img.Image, dur)
+			if img.Error != nil {
+				msg += fmt.Sprintf(": %v", img.Error)
+			}
+			fmt.Println(msg)
+		case StatusCancelled:
+			msg := fmt.Sprintf("  ⊘ %s (%s)", img.Image, dur)
 			if img.Error != nil {
 				msg += fmt.Sprintf(": %v", img.Error)
 			}

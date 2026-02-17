@@ -32,14 +32,15 @@ func FormatPullSummary(s *PullSummary) string {
 }
 
 type ImageResult struct {
-	Image   string
-	Arch    string
-	Os      string
-	Success bool
-	Skipped bool
-	DryRun  bool
-	Failed  bool
-	Error   string
+	Image     string
+	Arch      string
+	Os        string
+	Success   bool
+	Skipped   bool
+	DryRun    bool
+	Failed    bool
+	Cancelled bool
+	Error     string
 }
 
 func FormatImageResults(results []ImageResult) string {
@@ -49,6 +50,8 @@ func FormatImageResults(results []ImageResult) string {
 			output += fmt.Sprintf("  ◦ %s\n", r.Image)
 		} else if r.DryRun {
 			output += fmt.Sprintf("  ~ %s\n", r.Image)
+		} else if r.Cancelled {
+			output += fmt.Sprintf("  ⊘ %s: %s\n", r.Image, r.Error)
 		} else if r.Failed {
 			output += fmt.Sprintf("  ✗ %s: %s\n", r.Image, r.Error)
 		} else if r.Success {

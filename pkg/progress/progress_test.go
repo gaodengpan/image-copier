@@ -17,6 +17,7 @@ func TestImageStatus_String(t *testing.T) {
 		{StatusFailed, "failed"},
 		{StatusSkipped, "skipped"},
 		{StatusDryRun, "dry-run"},
+		{StatusCancelled, "cancelled"},
 		{99, "unknown"},
 	}
 

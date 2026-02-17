@@ -447,3 +447,64 @@ func TestNewPullSingleImageUseCase(t *testing.T) {
 	assert.NotNil(t, uc.imageValidator)
 	assert.IsType(t, &validators.ImageValidator{}, uc.imageValidator)
 }
+
+func TestPullSingleImageUseCase_CancellationDuringCheckLocal(t *testing.T) {
+	docker := new(mockDockerClient)
+	registry := new(mockRegistryClient)
+	github := new(mockGitHubClient)
+	fs := new(mockFileSystem)
+	logger := new(mockLogger)
+
+	docker.On("ListImages", mock.Anything).Return([]string{}, nil).Maybe()
+	registry.On("BuildDestImageID", mock.Anything, mock.Anything, mock.Anything).Return("registry.example.com/ns/redis:latest")
+
+	uc := NewPullSingleImageUseCase(
+		docker, registry, github, fs, nil, logger,
+		"owner", "repo", "token", "workflow",
+		nil,
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := uc.Execute(ctx, PullSingleImageInput{
+		ImageID:      "redis:latest",
+		RegistryHost: "registry.example.com",
+		RegistryUser: "user",
+		RegistryPass: "pass",
+	})
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "context canceled")
+}
+
+func TestPullSingleImageUseCase_CancellationDuringCheckRegistry(t *testing.T) {
+	docker := new(mockDockerClient)
+	registry := new(mockRegistryClient)
+	github := new(mockGitHubClient)
+	fs := new(mockFileSystem)
+	logger := new(mockLogger)
+
+	docker.On("ListImages", mock.Anything).Return([]string{}, nil)
+	registry.On("BuildDestImageID", mock.Anything, mock.Anything, mock.Anything).Return("registry.example.com/ns/redis:latest")
+
+	uc := NewPullSingleImageUseCase(
+		docker, registry, github, fs, nil, logger,
+		"owner", "repo", "token", "workflow",
+		nil,
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := uc.Execute(ctx, PullSingleImageInput{
+		ImageID:      "redis:latest",
+		RegistryHost: "registry.example.com",
+		RegistryUser: "user",
+		RegistryPass: "pass",
+		Force:        true,
+	})
+
+	assert.Error(t, err)
+	assert.Equal(t, context.Canceled, err)
+}

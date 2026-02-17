@@ -62,27 +62,29 @@ func (p *JSONPresenter) PresentProgress(current, total int) {
 
 func (p *JSONPresenter) PresentSummary(s *PullSummary, results []ImageResult) {
 	type imageResultJSON struct {
-		Image   string `json:"image"`
-		Arch    string `json:"arch"`
-		Os      string `json:"os"`
-		Success bool   `json:"success,omitempty"`
-		Skipped bool   `json:"skipped,omitempty"`
-		DryRun  bool   `json:"dry_run,omitempty"`
-		Failed  bool   `json:"failed,omitempty"`
-		Error   string `json:"error,omitempty"`
+		Image     string `json:"image"`
+		Arch      string `json:"arch"`
+		Os        string `json:"os"`
+		Success   bool   `json:"success,omitempty"`
+		Skipped   bool   `json:"skipped,omitempty"`
+		DryRun    bool   `json:"dry_run,omitempty"`
+		Failed    bool   `json:"failed,omitempty"`
+		Cancelled bool   `json:"cancelled,omitempty"`
+		Error     string `json:"error,omitempty"`
 	}
 
 	imgResults := make([]imageResultJSON, len(results))
 	for i, r := range results {
 		imgResults[i] = imageResultJSON{
-			Image:   r.Image,
-			Arch:    r.Arch,
-			Os:      r.Os,
-			Success: r.Success,
-			Skipped: r.Skipped,
-			DryRun:  r.DryRun,
-			Failed:  r.Failed,
-			Error:   r.Error,
+			Image:     r.Image,
+			Arch:      r.Arch,
+			Os:        r.Os,
+			Success:   r.Success,
+			Skipped:   r.Skipped,
+			DryRun:    r.DryRun,
+			Failed:    r.Failed,
+			Cancelled: r.Cancelled,
+			Error:     r.Error,
 		}
 	}
 
