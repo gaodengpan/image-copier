@@ -71,6 +71,12 @@ image-copier pull -f images.yaml
 
 # 强制全量同步 + 并发 5
 image-copier pull -f images.yaml --force -j 5
+
+# 带超时的同步（超时后取消未完成的镜像）
+image-copier pull -f images.yaml --timeout 5m
+
+# JSON 模式输出（适合脚本处理）
+image-copier pull -f images.yaml -o json
 ```
 
 ### 常用选项
@@ -83,6 +89,20 @@ image-copier pull -f images.yaml --force -j 5
 | `--dry-run` | 预览模式 |
 | `-v, --verbose` | 显示详细日志 |
 | `--arch` | 指定架构（如 arm64） |
+| `-o, --output` | 输出格式：text 或 json |
+| `--timeout` | 批量同步超时时间（如 5m, 1h），默认不超时 |
+
+## 输出说明
+
+### 状态符号
+
+| 符号 | 含义 |
+|------|------|
+| ✓ | 同步成功 |
+| ◦ | 已跳过（本地已存在） |
+| ✗ | 同步失败 |
+| ⊘ | 同步取消（超时） |
+| ~ | 预览模式 |
 
 ## 配置
 
