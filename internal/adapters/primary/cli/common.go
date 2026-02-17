@@ -3,8 +3,8 @@ package cli
 import (
 	"time"
 
-	"github.com/gaodengpan/image-copier/internal/config"
-	"github.com/gaodengpan/image-copier/internal/use_cases"
+	"github.com/gaodengpan/image-copier/internal/application/usecases"
+	"github.com/gaodengpan/image-copier/internal/infrastructure/config"
 	"github.com/gaodengpan/image-copier/pkg/logformat"
 	"github.com/gaodengpan/image-copier/pkg/progress"
 	"github.com/sirupsen/logrus"

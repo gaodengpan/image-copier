@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gaodengpan/image-copier/internal/application/ports"
 	"github.com/gaodengpan/image-copier/internal/domain/services"
 	"github.com/gaodengpan/image-copier/internal/domain/validators"
-	"github.com/gaodengpan/image-copier/internal/ports"
 	"github.com/gaodengpan/image-copier/internal/utils"
 	"github.com/gaodengpan/image-copier/pkg/retry"
 )
@@ -26,7 +26,7 @@ type PullSingleImageUseCaseImpl struct {
 	githubClient     ports.GitHubClient
 	fileSystem       ports.FileSystem
 	httpClient       *http.Client
-	logger           Logger
+	logger           ports.Logger
 	githubOwner      string
 	githubRepo       string
 	githubToken      string
@@ -41,7 +41,7 @@ func NewPullSingleImageUseCase(
 	githubClient ports.GitHubClient,
 	fileSystem ports.FileSystem,
 	httpClient *http.Client,
-	logger Logger,
+	logger ports.Logger,
 	githubOwner, githubRepo, githubToken, githubWorkflowID string,
 	stageCallback func(stage PullStage, polls int),
 ) *PullSingleImageUseCaseImpl {

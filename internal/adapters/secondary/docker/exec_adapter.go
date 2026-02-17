@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gaodengpan/image-copier/internal/adapters/errors"
+	"github.com/gaodengpan/image-copier/internal/application/ports"
 	"github.com/gaodengpan/image-copier/internal/domain/validators"
-	"github.com/gaodengpan/image-copier/internal/ports"
+	"github.com/gaodengpan/image-copier/internal/shared/errors"
 )
 
 const (

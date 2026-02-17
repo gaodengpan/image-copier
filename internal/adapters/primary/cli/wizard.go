@@ -8,8 +8,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/gaodengpan/image-copier/internal/config"
-	"github.com/gaodengpan/image-copier/internal/encryption"
+	"github.com/gaodengpan/image-copier/internal/infrastructure/config"
+	"github.com/gaodengpan/image-copier/internal/infrastructure/encryption"
 )
 
 // ConfigData holds the configuration from the wizard

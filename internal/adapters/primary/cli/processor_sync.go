@@ -8,12 +8,12 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/gaodengpan/image-copier/internal/adapters/docker"
-	"github.com/gaodengpan/image-copier/internal/adapters/filesystem"
-	"github.com/gaodengpan/image-copier/internal/adapters/github"
-	"github.com/gaodengpan/image-copier/internal/adapters/registry"
-	"github.com/gaodengpan/image-copier/internal/ports"
-	"github.com/gaodengpan/image-copier/internal/use_cases"
+	"github.com/gaodengpan/image-copier/internal/adapters/secondary/docker"
+	"github.com/gaodengpan/image-copier/internal/adapters/secondary/filesystem"
+	"github.com/gaodengpan/image-copier/internal/adapters/secondary/github"
+	"github.com/gaodengpan/image-copier/internal/adapters/secondary/registry"
+	"github.com/gaodengpan/image-copier/internal/application/ports"
+	"github.com/gaodengpan/image-copier/internal/application/usecases"
 	"github.com/gaodengpan/image-copier/pkg/progress"
 )
 

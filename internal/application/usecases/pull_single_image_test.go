@@ -91,6 +91,7 @@ func (m *mockLogger) Debugf(format string, args ...interface{}) {}
 func (m *mockLogger) Errorf(format string, args ...interface{}) {}
 func (m *mockLogger) Info(args ...interface{})                  {}
 func (m *mockLogger) Warn(args ...interface{})                  {}
+func (m *mockLogger) Error(args ...interface{})                 {}
 
 func TestPullSingleImageUseCase_Execute_InvalidImageName(t *testing.T) {
 	docker := new(mockDockerClient)

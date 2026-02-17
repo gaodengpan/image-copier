@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/gaodengpan/image-copier/internal/cli"
-	"github.com/gaodengpan/image-copier/internal/config"
+	"github.com/gaodengpan/image-copier/internal/adapters/primary/cli"
+	"github.com/gaodengpan/image-copier/internal/infrastructure/config"
 	"github.com/gaodengpan/image-copier/internal/version"
 )
 

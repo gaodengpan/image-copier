@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/gaodengpan/image-copier/internal/config"
+	"github.com/gaodengpan/image-copier/internal/infrastructure/config"
 )
 
 func NewConfigCommand() *cobra.Command {

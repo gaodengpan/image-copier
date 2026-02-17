@@ -16,10 +16,10 @@ import (
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
 
-	dockeradapter "github.com/gaodengpan/image-copier/internal/adapters/docker"
-	registryadapter "github.com/gaodengpan/image-copier/internal/adapters/registry"
-	"github.com/gaodengpan/image-copier/internal/config"
-	"github.com/gaodengpan/image-copier/internal/use_cases"
+	dockeradapter "github.com/gaodengpan/image-copier/internal/adapters/secondary/docker"
+	registryadapter "github.com/gaodengpan/image-copier/internal/adapters/secondary/registry"
+	"github.com/gaodengpan/image-copier/internal/application/usecases"
+	"github.com/gaodengpan/image-copier/internal/infrastructure/config"
 	"github.com/gaodengpan/image-copier/pkg/logformat"
 	"github.com/gaodengpan/image-copier/pkg/progress"
 )

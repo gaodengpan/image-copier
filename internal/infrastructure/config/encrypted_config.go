@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gaodengpan/image-copier/internal/encryption"
+	"github.com/gaodengpan/image-copier/internal/infrastructure/encryption"
 	"github.com/gaodengpan/image-copier/pkg/retry"
 	"github.com/spf13/viper"
 )
