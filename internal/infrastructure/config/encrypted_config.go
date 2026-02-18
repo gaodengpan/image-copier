@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gaodengpan/image-copier/internal/infrastructure/encryption"
@@ -117,30 +116,6 @@ func (evp *EncryptedViperConfigProvider) decryptConfig(cfg *Config) (*Config, er
 	cfg.Registry.Password = decryptedPassword
 
 	return cfg, nil
-}
-
-// decryptIfEncrypted decrypts a value if it's encrypted, otherwise returns the original value
-func decryptIfEncrypted(value string) (string, error) {
-	if !strings.HasPrefix(value, "encrypted:") {
-		// Value is not encrypted, return as is
-		return value, nil
-	}
-
-	// Extract encrypted portion and decrypt
-	encryptedPart := strings.TrimPrefix(value, "encrypted:")
-
-	// Create a new decryptor each time to avoid any state issues
-	decryptor := encryption.NewConfigDecryptor()
-	decryptedValue, err := decryptor.DecryptValue(encryptedPart)
-	if err != nil {
-		return "", &encryption.DecryptionError{
-			Message: "decryption failed, possibly due to incorrect key or corrupted data",
-			Field:   value, // Provide more context about which field had the issue
-			Cause:   err,
-		}
-	}
-
-	return decryptedValue, nil
 }
 
 // LoadWithPaths loads configuration with specific paths for testing

@@ -1,6 +1,10 @@
 package encryption
 
-import "fmt"
+import (
+	"encoding/base64"
+	"fmt"
+	"strings"
+)
 
 // EncryptionError represents an error during the encryption process
 type EncryptionError struct {
@@ -38,4 +42,27 @@ type InvalidFormatError struct {
 
 func (e *InvalidFormatError) Error() string {
 	return fmt.Sprintf("invalid format for encrypted value '%s': %s (expected: %s)", e.Value, e.Message, e.ExpectedFormat)
+}
+
+func IsValidEncryptedFormat(value string) bool {
+	if value == "" {
+		return false
+	}
+
+	if !strings.HasPrefix(value, "encrypted:") {
+		return false
+	}
+
+	encodedPart := value[10:]
+
+	if encodedPart == "" {
+		return false
+	}
+
+	_, err := base64.StdEncoding.DecodeString(encodedPart)
+	return err == nil
+}
+
+func IsEncryptedValue(value string) bool {
+	return strings.HasPrefix(value, "encrypted:")
 }

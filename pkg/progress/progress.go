@@ -228,13 +228,6 @@ func (p *Progress) GetImages() []*ImageProgress {
 	return result
 }
 
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen-3] + "..."
-}
-
 // hashSuffixRe matches a hex digest suffix (20+ hex chars) at the end of
 // the image path component, e.g. "controller-10a3e32792f33651396d02b6855a6e36".
 var hashSuffixRe = regexp.MustCompile(`-[0-9a-f]{20,}$`)
