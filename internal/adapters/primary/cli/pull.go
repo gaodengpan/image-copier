@@ -16,8 +16,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
 
-	dockeradapter "github.com/gaodengpan/image-copier/internal/adapters/secondary/docker"
-	registryadapter "github.com/gaodengpan/image-copier/internal/adapters/secondary/registry"
+	"github.com/gaodengpan/image-copier/internal/adapters"
 	"github.com/gaodengpan/image-copier/internal/application/usecases"
 	"github.com/gaodengpan/image-copier/internal/infrastructure/config"
 	"github.com/gaodengpan/image-copier/pkg/logformat"
@@ -248,69 +247,13 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syn
 	presenter.PresentCheckingImageCount(len(tasks))
 
 	// === Phase 1: Diff ===
-	type diffResult struct {
-		task         syncTask
-		remoteExists bool
-		localExists  bool
-		remoteError  error
-		localError   error
-	}
-	results := make([]diffResult, len(tasks))
+	factory := adapters.NewAdapterFactory(logger)
+	dockerClient := factory.CreateDockerClient()
+	registryClient := factory.CreateRegistryClient()
 
-	// Create adapters for local and registry image checks
-	dockerClient := dockeradapter.NewExecDockerAdapter()
-	registryClient := registryadapter.NewSkopeoAdapter()
-
-	// Concurrent check (bounded by workerCount)
-	sem := make(chan struct{}, workerCount)
-	var wg sync.WaitGroup
-	for i, t := range tasks {
-		wg.Add(1)
-		go func(idx int, task syncTask) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
-			select {
-			case <-ctxDiff.Done():
-				return
-			default:
-			}
-
-			sourceID := task.Source
-			destID := registryClient.BuildDestImageID(sourceID, baseCfg.Registry.Host, baseCfg.Registry.Namespace)
-			remoteExists, remoteErr := registryClient.CheckImageExists(ctxDiff, destID, baseCfg.Registry.Username, baseCfg.Registry.Password)
-			localExists, localErr := dockerClient.ImageExists(ctxDiff, task.Source)
-
-			// Log errors but continue - treat check failure as "not exists" to allow retry
-			if remoteErr != nil {
-				logger.Warnf("Failed to check remote image %s: %v", destID, remoteErr)
-			}
-			if localErr != nil {
-				logger.Warnf("Failed to check local image %s: %v", task.Source, localErr)
-			}
-
-			results[idx] = diffResult{
-				task:         task,
-				remoteExists: remoteExists,
-				localExists:  localExists,
-				remoteError:  remoteErr,
-				localError:   localErr,
-			}
-		}(i, t)
-	}
-	wg.Wait()
-
-	// Partition: synced vs needsSync
-	// An image is synced if it exists locally (no need to pull from source)
-	var synced, needsSync []syncTask
-	for _, r := range results {
-		if r.localExists && !force {
-			synced = append(synced, r.task)
-		} else {
-			needsSync = append(needsSync, r.task)
-		}
-	}
+	diffPhaser := NewDiffPhaser(logger, dockerClient, registryClient, baseCfg)
+	results := diffPhaser.Execute(ctxDiff, tasks, workerCount)
+	synced, needsSync := diffPhaser.PartitionResults(results, force)
 
 	// Report diff results
 	presenter.PresentDiffSummary(len(synced), len(needsSync))
@@ -398,7 +341,17 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syn
 	}
 
 	// Create processor
-	processor := NewSyncTasksProcessor(logger, force)
+	processor := NewSyncTasksProcessor(
+		logger,
+		force,
+		factory.CreateDockerClient(),
+		factory.CreateRegistryClient(),
+		factory.CreateGitHubClient(baseCfg.Github.Owner, baseCfg.Github.Repo, baseCfg.Github.Token, baseCfg.Github.WorkflowID),
+		factory.CreateFileSystem(),
+		factory.CreateHTTPClient(),
+		factory.CreateSystemClient(),
+		factory.CreateImageIDService(),
+	)
 
 	// Execute with inline worker pool (skip progress.Wait() auto-summary)
 	startTime := time.Now()

@@ -74,3 +74,51 @@ func (s *ImageIDService) normalizeImageName(imageName, tag, digest string) strin
 	normalized = strings.TrimRight(normalized, "_")
 	return normalized + tag + digest
 }
+
+func (s *ImageIDService) NormalizeSourceID(imageID string) string {
+	segs := strings.Split(imageID, "/")
+
+	var normalized string
+	switch len(segs) {
+	case 1:
+		normalized = fmt.Sprintf("docker.io/library/%s", imageID)
+	case 2:
+		normalized = s.normalizeImageSegment(segs[0]) + "/" + segs[1]
+	default:
+		normalized = imageID
+	}
+
+	lastSlash := strings.LastIndex(normalized, "/")
+	tail := normalized
+	if lastSlash >= 0 {
+		tail = normalized[lastSlash+1:]
+	}
+	if !s.hasTagOrDigest(tail) {
+		normalized += ":latest"
+	}
+
+	return normalized
+}
+
+func (s *ImageIDService) normalizeImageSegment(segment string) string {
+	if !strings.Contains(segment, ".") && !strings.Contains(segment, ":") {
+		return "docker.io/" + segment
+	}
+	return segment
+}
+
+func (s *ImageIDService) hasTagOrDigest(str string) bool {
+	if str == "" {
+		return false
+	}
+	parts := strings.Split(str, "/")
+	tailSegment := parts[len(parts)-1]
+	if strings.Contains(tailSegment, "@") {
+		return true
+	}
+	colonParts := strings.Split(tailSegment, ":")
+	if len(colonParts) > 2 || len(colonParts) == 2 {
+		return true
+	}
+	return false
+}

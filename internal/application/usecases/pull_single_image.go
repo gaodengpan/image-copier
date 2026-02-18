@@ -2,16 +2,12 @@ package use_cases
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
-	"time"
 
 	"github.com/gaodengpan/image-copier/internal/application/ports"
 	"github.com/gaodengpan/image-copier/internal/domain/services"
 	"github.com/gaodengpan/image-copier/internal/domain/validators"
-	"github.com/gaodengpan/image-copier/pkg/retry"
 )
 
 var (
@@ -22,7 +18,7 @@ var (
 type PullSingleImageUseCaseImpl struct {
 	dockerClient     ports.DockerClient
 	registryClient   ports.RegistryClient
-	githubClient     ports.GitHubClient
+	githubClient     ports.GitHubClientWithRetry
 	fileSystem       ports.FileSystem
 	httpClient       ports.HTTPClient
 	logger           ports.Logger
@@ -39,7 +35,7 @@ type PullSingleImageUseCaseImpl struct {
 func NewPullSingleImageUseCase(
 	dockerClient ports.DockerClient,
 	registryClient ports.RegistryClient,
-	githubClient ports.GitHubClient,
+	githubClient ports.GitHubClientWithRetry,
 	fileSystem ports.FileSystem,
 	httpClient ports.HTTPClient,
 	logger ports.Logger,
@@ -50,8 +46,8 @@ func NewPullSingleImageUseCase(
 ) *PullSingleImageUseCaseImpl {
 	return &PullSingleImageUseCaseImpl{
 		dockerClient:     dockerClient,
-		registryClient:   registryClient,
 		githubClient:     githubClient,
+		registryClient:   registryClient,
 		fileSystem:       fileSystem,
 		httpClient:       httpClient,
 		logger:           logger,
@@ -77,7 +73,7 @@ func (uc *PullSingleImageUseCaseImpl) Execute(ctx context.Context, input PullSin
 
 	uc.logger.Infof("Processing image: %s", sanitizeForLog(input.ImageID))
 
-	sourceID := normalizeSourceID(input.ImageID)
+	sourceID := uc.imageIDService.NormalizeSourceID(input.ImageID)
 	destImageID := uc.registryClient.BuildDestImageID(sourceID, input.RegistryHost, input.RegistryNS)
 
 	uc.notifyStage(StageCheckLocal, 0)
@@ -160,7 +156,7 @@ func (uc *PullSingleImageUseCaseImpl) checkLocalImageExists(ctx context.Context,
 		return false, ctx.Err()
 	}
 
-	normalizedID := normalizeSourceID(imageID)
+	normalizedID := uc.imageIDService.NormalizeSourceID(imageID)
 
 	exists, err := uc.dockerClient.ImageExists(ctx, imageID)
 	if err != nil {
@@ -182,68 +178,9 @@ func (uc *PullSingleImageUseCaseImpl) checkLocalImageExists(ctx context.Context,
 }
 
 func (uc *PullSingleImageUseCaseImpl) triggerWorkflow(ctx context.Context, sourceID, destImageID, arch, osType string) (string, error) {
-	suffix := fmt.Sprintf("--%d", time.Now().Unix())
-
-	data := map[string]interface{}{
-		"ref": "master",
-		"inputs": map[string]string{
-			"imageId":     sourceID,
-			"destImageId": destImageID,
-			"suffix":      suffix,
-			"arch":        arch,
-			"os":          osType,
-		},
-	}
-
-	err := retry.Retry(ctx, retry.DefaultConfig(), func() error {
-		jsonData, err := json.Marshal(data)
-		if err != nil {
-			return fmt.Errorf("failed to marshal data: %w", err)
-		}
-
-		url := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/workflows/%s/dispatches",
-			uc.githubOwner, uc.githubRepo, uc.githubWorkflowID)
-
-		req, err := http.NewRequest("POST", url, strings.NewReader(string(jsonData)))
-		if err != nil {
-			return fmt.Errorf("failed to create request: %w", err)
-		}
-
-		const (
-			githubMediaType  = "application/vnd.github+json"
-			githubAPIVersion = "2022-11-28"
-		)
-
-		req.Header.Set("Accept", githubMediaType)
-		req.Header.Set("Authorization", "Bearer "+uc.githubToken)
-		req.Header.Set("X-GitHub-Api-Version", githubAPIVersion)
-		req.Header.Set("Content-Type", "application/json")
-
-		resp, err := uc.httpClient.Do(req)
-		if err != nil {
-			return retry.NewRetryableError(fmt.Errorf("failed to send request: %w", err))
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode == http.StatusNoContent {
-			return nil
-		}
-
-		uc.logger.Debugf("GitHub API response status: %d", resp.StatusCode)
-
-		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
-			return retry.NewRetryableError(fmt.Errorf("unexpected status code: %d", resp.StatusCode))
-		}
-
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	})
+	runID, err := uc.githubClient.TriggerWorkflowWithRetry(ctx, sourceID, destImageID, arch, osType)
 	if err != nil {
 		return "", fmt.Errorf("failed to trigger workflow: %w", err)
-	}
-
-	runID, err := uc.findWorkflowRunID(ctx, sourceID, destImageID, suffix)
-	if err != nil {
-		return "", fmt.Errorf("failed to find workflow run ID: %w", err)
 	}
 
 	uc.logger.Infof("Triggered workflow run ID: %s", sanitizeForLog(runID))
@@ -251,114 +188,11 @@ func (uc *PullSingleImageUseCaseImpl) triggerWorkflow(ctx context.Context, sourc
 }
 
 func (uc *PullSingleImageUseCaseImpl) findWorkflowRunID(ctx context.Context, sourceID, destImageID, suffix string) (string, error) {
-	expectedName := fmt.Sprintf("copy %s to %s%s", sourceID, destImageID, suffix)
-	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/workflows/%s/runs",
-		uc.githubOwner, uc.githubRepo, uc.githubWorkflowID)
-
-	const (
-		githubMediaType  = "application/vnd.github+json"
-		githubAPIVersion = "2022-11-28"
-		maxRetries       = 60
-		pollInterval     = 2 * time.Second
-	)
-
-	for i := 0; i < maxRetries; i++ {
-		req, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			return "", err
-		}
-
-		req.Header.Set("Accept", githubMediaType)
-		req.Header.Set("Authorization", "Bearer "+uc.githubToken)
-		req.Header.Set("X-GitHub-Api-Version", githubAPIVersion)
-
-		resp, err := uc.httpClient.Do(req)
-		if err != nil {
-			return "", err
-		}
-		defer resp.Body.Close()
-
-		var result struct {
-			WorkflowRuns []struct {
-				ID     int    `json:"id"`
-				Name   string `json:"name"`
-				Status string `json:"status"`
-			} `json:"workflow_runs"`
-		}
-
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return "", err
-		}
-
-		for _, run := range result.WorkflowRuns {
-			if run.Name == expectedName {
-				return fmt.Sprintf("%d", run.ID), nil
-			}
-		}
-
-		select {
-		case <-time.After(pollInterval):
-		case <-ctx.Done():
-			return "", ctx.Err()
-		}
-	}
-
-	return "", fmt.Errorf("workflow run not found after %d attempts", maxRetries)
+	return uc.githubClient.FindWorkflowRunID(ctx, uc.githubOwner, uc.githubRepo, uc.githubWorkflowID, sourceID, destImageID, suffix)
 }
 
 func (uc *PullSingleImageUseCaseImpl) waitForWorkflow(ctx context.Context, runID string) error {
-	const (
-		githubMediaType  = "application/vnd.github+json"
-		githubAPIVersion = "2022-11-28"
-		maxRetries       = 300
-		pollInterval     = 2 * time.Second
-	)
-
-	for i := 0; i < maxRetries; i++ {
-		url := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/runs/%s",
-			uc.githubOwner, uc.githubRepo, runID)
-
-		req, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			return err
-		}
-
-		req.Header.Set("Accept", githubMediaType)
-		req.Header.Set("Authorization", "Bearer "+uc.githubToken)
-		req.Header.Set("X-GitHub-Api-Version", githubAPIVersion)
-
-		resp, err := uc.httpClient.Do(req)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-
-		var result struct {
-			Status     string `json:"status"`
-			Conclusion string `json:"conclusion"`
-		}
-
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return err
-		}
-
-		if result.Status == "completed" {
-			if result.Conclusion == "success" {
-				return nil
-			}
-			return fmt.Errorf("workflow failed with conclusion: %s", result.Conclusion)
-		}
-
-		uc.notifyStage(StageWaitWorkflow, i)
-
-		select {
-		case <-time.After(pollInterval):
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-
-	return fmt.Errorf("workflow timed out after %d attempts", maxRetries)
+	return uc.githubClient.WaitForWorkflowSimple(ctx, runID)
 }
 
 func (uc *PullSingleImageUseCaseImpl) downloadAndLoadImage(ctx context.Context, registryImageID, userImageTag, username, password string) error {
@@ -430,52 +264,4 @@ func (uc *PullSingleImageUseCaseImpl) prePullValidate(ctx context.Context) error
 
 func sanitizeForLog(input string) string {
 	return services.SanitizeForLog(input)
-}
-
-func normalizeSourceID(imageID string) string {
-	segs := strings.Split(imageID, "/")
-
-	var normalized string
-	switch len(segs) {
-	case 1:
-		normalized = fmt.Sprintf("docker.io/library/%s", imageID)
-	case 2:
-		normalized = normalizeImageSegment(segs[0]) + "/" + segs[1]
-	default:
-		normalized = imageID
-	}
-
-	lastSlash := strings.LastIndex(normalized, "/")
-	tail := normalized
-	if lastSlash >= 0 {
-		tail = normalized[lastSlash+1:]
-	}
-	if !hasTagOrDigest(tail) {
-		normalized += ":latest"
-	}
-
-	return normalized
-}
-
-func normalizeImageSegment(segment string) string {
-	if !strings.Contains(segment, ".") && !strings.Contains(segment, ":") {
-		return "docker.io/" + segment
-	}
-	return segment
-}
-
-func hasTagOrDigest(s string) bool {
-	if s == "" {
-		return false
-	}
-	parts := strings.Split(s, "/")
-	tailSegment := parts[len(parts)-1]
-	if strings.Contains(tailSegment, "@") {
-		return true
-	}
-	colonParts := strings.Split(tailSegment, ":")
-	if len(colonParts) > 2 || len(colonParts) == 2 {
-		return true
-	}
-	return false
 }

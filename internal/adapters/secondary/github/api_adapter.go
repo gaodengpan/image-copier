@@ -10,6 +10,7 @@ import (
 
 	"github.com/gaodengpan/image-copier/internal/application/ports"
 	"github.com/gaodengpan/image-copier/internal/shared/errors"
+	"github.com/gaodengpan/image-copier/pkg/retry"
 )
 
 const (
@@ -23,9 +24,10 @@ type APIAdapter struct {
 	token      string
 	owner      string
 	repo       string
+	workflowID string
 }
 
-func NewAPIAdapter(httpClient *http.Client, token, owner, repo string) *APIAdapter {
+func NewAPIAdapter(httpClient *http.Client, token, owner, repo, workflowID string) *APIAdapter {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 30 * time.Second}
 	}
@@ -34,7 +36,40 @@ func NewAPIAdapter(httpClient *http.Client, token, owner, repo string) *APIAdapt
 		token:      token,
 		owner:      owner,
 		repo:       repo,
+		workflowID: workflowID,
 	}
+}
+
+func (a *APIAdapter) TriggerWorkflowSimple(ctx context.Context, imageID, destImageID, arch, osType string) (string, error) {
+	return a.TriggerWorkflow(ctx, a.owner, a.repo, a.workflowID, map[string]string{
+		"imageId":     imageID,
+		"destImageId": destImageID,
+		"arch":        arch,
+		"os":          osType,
+	})
+}
+
+func (a *APIAdapter) WaitForWorkflowSimple(ctx context.Context, runID string) error {
+	return a.WaitForWorkflow(ctx, a.owner, a.repo, runID)
+}
+
+func (a *APIAdapter) TriggerWorkflowWithRetry(ctx context.Context, imageID, destImageID, arch, osType string) (string, error) {
+	suffix := fmt.Sprintf("--%d", time.Now().Unix())
+
+	runID, err := a.TriggerWorkflowSimple(ctx, imageID, destImageID, arch, osType)
+	if err == nil {
+		return runID, nil
+	}
+
+	err = retry.Retry(ctx, retry.DefaultConfig(), func() error {
+		_, err := a.TriggerWorkflowSimple(ctx, imageID, destImageID, arch, osType)
+		return err
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to trigger workflow: %w", err)
+	}
+
+	return a.findWorkflowRunID(ctx, a.owner, a.repo, a.workflowID, imageID, destImageID, suffix)
 }
 
 func (a *APIAdapter) TriggerWorkflow(ctx context.Context, owner, repo, workflowID string, inputs map[string]string) (string, error) {
@@ -126,6 +161,39 @@ func (a *APIAdapter) GetWorkflowStatus(ctx context.Context, owner, repo, runID s
 	}
 
 	return result.Status, nil
+}
+
+func (a *APIAdapter) WaitForWorkflow(ctx context.Context, owner, repo, runID string) error {
+	const (
+		maxRetries   = 300
+		pollInterval = 2 * time.Second
+	)
+
+	for i := 0; i < maxRetries; i++ {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(pollInterval):
+		}
+
+		conclusion, err := a.GetWorkflowStatus(ctx, owner, repo, runID)
+		if err != nil {
+			return err
+		}
+
+		if conclusion == "success" {
+			return nil
+		}
+		if conclusion != "" && conclusion != "in_progress" && conclusion != "queued" {
+			return fmt.Errorf("workflow failed with conclusion: %s", conclusion)
+		}
+	}
+
+	return fmt.Errorf("workflow timed out after %d attempts", maxRetries)
+}
+
+func (a *APIAdapter) FindWorkflowRunID(ctx context.Context, owner, repo, workflowID, sourceID, destImageID, suffix string) (string, error) {
+	return a.findWorkflowRunID(ctx, owner, repo, workflowID, sourceID, destImageID, suffix)
 }
 
 func (a *APIAdapter) findWorkflowRunID(ctx context.Context, owner, repo, workflowID, sourceID, destImageID, suffix string) (string, error) {

@@ -3,19 +3,13 @@ package cli
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/gaodengpan/image-copier/internal/adapters/secondary/docker"
-	"github.com/gaodengpan/image-copier/internal/adapters/secondary/filesystem"
-	"github.com/gaodengpan/image-copier/internal/adapters/secondary/github"
-	"github.com/gaodengpan/image-copier/internal/adapters/secondary/registry"
 	"github.com/gaodengpan/image-copier/internal/application/ports"
 	"github.com/gaodengpan/image-copier/internal/application/usecases"
 	"github.com/gaodengpan/image-copier/internal/domain/services"
-	"github.com/gaodengpan/image-copier/internal/infrastructure/system"
 	"github.com/gaodengpan/image-copier/pkg/progress"
 )
 
@@ -39,24 +33,34 @@ type SyncTasksProcessor struct {
 	force          bool
 	dockerClient   ports.DockerClient
 	registryClient ports.RegistryClient
-	githubClient   ports.GitHubClient
+	githubClient   ports.GitHubClientWithRetry
 	fileSystem     ports.FileSystem
 	httpClient     ports.HTTPClient
 	systemClient   ports.SystemClient
 	imageIDService *services.ImageIDService
 }
 
-func NewSyncTasksProcessor(logger *logrus.Logger, force bool) *SyncTasksProcessor {
+func NewSyncTasksProcessor(
+	logger *logrus.Logger,
+	force bool,
+	dockerClient ports.DockerClient,
+	registryClient ports.RegistryClient,
+	githubClient ports.GitHubClientWithRetry,
+	fileSystem ports.FileSystem,
+	httpClient ports.HTTPClient,
+	systemClient ports.SystemClient,
+	imageIDService *services.ImageIDService,
+) *SyncTasksProcessor {
 	return &SyncTasksProcessor{
 		logger:         logger,
 		force:          force,
-		dockerClient:   docker.NewExecDockerAdapter(),
-		registryClient: registry.NewSkopeoAdapter(),
-		githubClient:   github.NewAPIAdapter(nil, "", "", ""),
-		fileSystem:     filesystem.NewOSAdapter(),
-		httpClient:     &http.Client{},
-		systemClient:   system.NewSystemAdapter(),
-		imageIDService: services.NewImageIDService(),
+		dockerClient:   dockerClient,
+		registryClient: registryClient,
+		githubClient:   githubClient,
+		fileSystem:     fileSystem,
+		httpClient:     httpClient,
+		systemClient:   systemClient,
+		imageIDService: imageIDService,
 	}
 }
 

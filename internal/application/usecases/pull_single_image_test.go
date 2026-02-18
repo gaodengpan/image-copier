@@ -88,6 +88,26 @@ func (m *mockGitHubClient) GetWorkflowStatus(ctx context.Context, owner, repo, r
 	return args.String(0), args.Error(1)
 }
 
+func (m *mockGitHubClient) WaitForWorkflow(ctx context.Context, owner, repo, runID string) error {
+	args := m.Called(ctx, owner, repo, runID)
+	return args.Error(0)
+}
+
+func (m *mockGitHubClient) FindWorkflowRunID(ctx context.Context, owner, repo, workflowID, sourceID, destImageID, suffix string) (string, error) {
+	args := m.Called(ctx, owner, repo, workflowID, sourceID, destImageID, suffix)
+	return args.String(0), args.Error(1)
+}
+
+func (m *mockGitHubClient) TriggerWorkflowWithRetry(ctx context.Context, imageID, destImageID, arch, osType string) (string, error) {
+	args := m.Called(ctx, imageID, destImageID, arch, osType)
+	return args.String(0), args.Error(1)
+}
+
+func (m *mockGitHubClient) WaitForWorkflowSimple(ctx context.Context, runID string) error {
+	args := m.Called(ctx, runID)
+	return args.Error(0)
+}
+
 type mockFileSystem struct {
 	mock.Mock
 }
