@@ -246,14 +246,59 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syn
 	}
 	presenter.PresentCheckingImageCount(len(tasks))
 
-	// === Phase 1: Diff ===
 	factory := adapters.NewAdapterFactory(logger)
-	dockerClient := factory.CreateDockerClient()
-	registryClient := factory.CreateRegistryClient()
 
-	diffPhaser := NewDiffPhaser(logger, dockerClient, registryClient, baseCfg)
-	results := diffPhaser.Execute(ctxDiff, tasks, workerCount)
-	synced, needsSync := diffPhaser.PartitionResults(results, force)
+	// Convert CLI syncTask to use case SyncTask
+	useCaseTasks := make([]use_cases.SyncTask, len(tasks))
+	for i, t := range tasks {
+		useCaseTasks[i] = use_cases.SyncTask{
+			Source: t.Source,
+			Arch:   t.Arch,
+			Os:     t.Os,
+		}
+	}
+
+	// Create use case for diff phase
+	diffUseCase := use_cases.NewSyncImagesUseCase(
+		factory.CreateDockerClient(),
+		factory.CreateRegistryClient(),
+		factory.CreateGitHubClient(baseCfg.Github.Owner, baseCfg.Github.Repo, baseCfg.Github.Token, baseCfg.Github.WorkflowID),
+		factory.CreateFileSystem(),
+		factory.CreateHTTPClient(),
+		logger,
+		factory.CreateSystemClient(),
+		factory.CreateImageIDService(),
+		use_cases.SyncImagesConfig{
+			RegistryHost:   baseCfg.Registry.Host,
+			RegistryUser:   baseCfg.Registry.Username,
+			RegistryPass:   baseCfg.Registry.Password,
+			RegistryNS:     baseCfg.Registry.Namespace,
+			RegistryArch:   baseCfg.Registry.Arch,
+			RegistryOs:     baseCfg.Registry.Os,
+			GithubOwner:    baseCfg.Github.Owner,
+			GithubRepo:     baseCfg.Github.Repo,
+			GithubToken:    baseCfg.Github.Token,
+			GithubWorkflow: baseCfg.Github.WorkflowID,
+			Force:          force,
+			DryRun:         dryRun,
+		},
+	)
+
+	// Execute diff phase through use case
+	useCaseSynced, useCaseNeedsSync, err := diffUseCase.Diff(ctxDiff, useCaseTasks, workerCount, force)
+	if err != nil {
+		return fmt.Errorf("diff phase failed: %w", err)
+	}
+
+	// Convert use case results to CLI syncTask
+	synced := make([]syncTask, len(useCaseSynced))
+	for i, t := range useCaseSynced {
+		synced[i] = syncTask{Source: t.Source, Arch: t.Arch, Os: t.Os}
+	}
+	needsSync := make([]syncTask, len(useCaseNeedsSync))
+	for i, t := range useCaseNeedsSync {
+		needsSync[i] = syncTask{Source: t.Source, Arch: t.Arch, Os: t.Os}
+	}
 
 	// Report diff results
 	presenter.PresentDiffSummary(len(synced), len(needsSync))
