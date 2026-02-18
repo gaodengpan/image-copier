@@ -2,6 +2,7 @@ package use_cases
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"strings"
 
@@ -263,5 +264,6 @@ func (uc *PullSingleImageUseCaseImpl) prePullValidate(ctx context.Context) error
 }
 
 func sanitizeForLog(input string) string {
-	return services.SanitizeForLog(input)
+	hash := sha256.Sum256([]byte(input))
+	return fmt.Sprintf("%s%x%s", "[REDACTED:", hash[:8], "]")
 }
