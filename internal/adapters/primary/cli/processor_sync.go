@@ -138,8 +138,3 @@ func (p *SyncTasksProcessor) Process(ctx context.Context, task WorkerPoolTask[Sy
 
 	return err
 }
-
-// GetStageCallback returns a stage callback function
-func (p *SyncTasksProcessor) GetStageCallback(workerIdx int, label string, startTime time.Time) func(use_cases.PullStage, int) {
-	return nil
-}

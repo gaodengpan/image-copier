@@ -5,9 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gaodengpan/image-copier/internal/application/usecases"
 	"github.com/gaodengpan/image-copier/internal/infrastructure/config"
-	"github.com/gaodengpan/image-copier/pkg/progress"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -382,61 +380,6 @@ func TestFormatImageResults(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
-}
-
-func TestAsymptotic(t *testing.T) {
-	tests := []struct {
-		name      string
-		base      float64
-		rangeSize float64
-		polls     int
-		wantMin   float64
-		wantMax   float64
-	}{
-		{
-			name:      "zero polls",
-			base:      20,
-			rangeSize: 60,
-			polls:     0,
-			wantMin:   20,
-			wantMax:   20,
-		},
-		{
-			name:      "one poll",
-			base:      20,
-			rangeSize: 60,
-			polls:     1,
-			wantMin:   20,
-			wantMax:   50,
-		},
-		{
-			name:      "many polls",
-			base:      20,
-			rangeSize: 60,
-			polls:     100,
-			wantMin:   69,
-			wantMax:   80,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := asymptotic(tt.base, tt.rangeSize, tt.polls)
-			assert.GreaterOrEqual(t, result, tt.wantMin)
-			assert.LessOrEqual(t, result, tt.wantMax)
-		})
-	}
-}
-
-func TestCreateStageCallback(t *testing.T) {
-	progressMgr := progress.NewProgress(1, 1, false)
-	startTime := time.Now()
-
-	callback := CreateStageCallback(progressMgr, 0, "test-image", startTime)
-
-	callback(use_cases.PullStage(0), 0)
-	callback(use_cases.StageCheckRegistry, 0)
-	callback(use_cases.StageWaitWorkflow, 5)
 }
 
 func TestCreateCoreConfigFromConfig(t *testing.T) {
