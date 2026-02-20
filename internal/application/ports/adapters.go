@@ -41,11 +41,6 @@ type SystemClient interface {
 	DockerRunning(ctx context.Context) (bool, error)
 }
 
-type CommandRunner interface {
-	Run(ctx context.Context, name string, args ...string) ([]byte, error)
-	RunWithOutput(ctx context.Context, name string, args ...string) (string, string, error)
-}
-
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
