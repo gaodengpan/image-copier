@@ -10,6 +10,7 @@ import (
 	"github.com/gaodengpan/image-copier/internal/application/ports"
 	"github.com/gaodengpan/image-copier/internal/domain/services"
 	"github.com/gaodengpan/image-copier/internal/domain/validators"
+	"github.com/gaodengpan/image-copier/internal/infrastructure/config"
 	"github.com/gaodengpan/image-copier/pkg/progress"
 )
 
@@ -52,18 +53,7 @@ type SyncImagesUseCaseImpl struct {
 }
 
 type SyncImagesConfig struct {
-	RegistryHost   string
-	RegistryUser   string
-	RegistryPass   string
-	RegistryNS     string
-	RegistryArch   string
-	RegistryOs     string
-	GithubOwner    string
-	GithubRepo     string
-	GithubToken    string
-	GithubWorkflow string
-	Force          bool
-	DryRun         bool
+	*config.Config
 }
 
 func NewSyncImagesUseCase(
@@ -87,10 +77,10 @@ func NewSyncImagesUseCase(
 		systemClient:     systemClient,
 		imageIDService:   imageIDService,
 		imageValidator:   validators.NewImageValidator(),
-		githubOwner:      cfg.GithubOwner,
-		githubRepo:       cfg.GithubRepo,
-		githubToken:      cfg.GithubToken,
-		githubWorkflowID: cfg.GithubWorkflow,
+		githubOwner:      cfg.Config.Github.Owner,
+		githubRepo:       cfg.Config.Github.Repo,
+		githubToken:      cfg.Config.Github.Token,
+		githubWorkflowID: cfg.Config.Github.WorkflowID,
 		cfg:              &cfg,
 		callback:         nil,
 	}
@@ -164,8 +154,8 @@ func (uc *SyncImagesUseCaseImpl) diffPhase(ctx context.Context, tasks []SyncTask
 			}
 
 			sourceID := task.Source
-			destID := uc.registryClient.BuildDestImageID(sourceID, uc.cfg.RegistryHost, uc.cfg.RegistryNS)
-			remoteExists, remoteErr := uc.registryClient.CheckImageExists(ctx, destID, uc.cfg.RegistryUser, uc.cfg.RegistryPass)
+			destID := uc.registryClient.BuildDestImageID(sourceID, uc.cfg.Config.Registry.Host, uc.cfg.Config.Registry.Namespace)
+			remoteExists, remoteErr := uc.registryClient.CheckImageExists(ctx, destID, uc.cfg.Config.Registry.Username, uc.cfg.Config.Registry.Password)
 			localExists, localErr := uc.dockerClient.ImageExists(ctx, task.Source)
 
 			if remoteErr != nil {
@@ -273,14 +263,14 @@ func (uc *SyncImagesUseCaseImpl) processSingleImage(ctx context.Context, task Sy
 
 	_, err := useCase.Execute(ctx, PullSingleImageInput{
 		ImageID:      task.Source,
-		RegistryHost: uc.cfg.RegistryHost,
-		RegistryUser: uc.cfg.RegistryUser,
-		RegistryPass: uc.cfg.RegistryPass,
-		RegistryNS:   uc.cfg.RegistryNS,
+		RegistryHost: uc.cfg.Config.Registry.Host,
+		RegistryUser: uc.cfg.Config.Registry.Username,
+		RegistryPass: uc.cfg.Config.Registry.Password,
+		RegistryNS:   uc.cfg.Config.Registry.Namespace,
 		RegistryArch: task.Arch,
 		RegistryOs:   task.Os,
-		Force:        uc.cfg.Force,
-		DryRun:       uc.cfg.DryRun,
+		Force:        uc.cfg.Config.Force,
+		DryRun:       uc.cfg.Config.DryRun,
 	})
 
 	return err

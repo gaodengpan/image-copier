@@ -7,14 +7,12 @@ import (
 	"io"
 	"os"
 	"runtime"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"go.yaml.in/yaml/v3"
 
 	"github.com/gaodengpan/image-copier/internal/adapters"
 	"github.com/gaodengpan/image-copier/internal/application/usecases"
@@ -164,77 +162,6 @@ Supports two modes:
 	return cmd
 }
 
-// SyncManifest represents the YAML manifest structure.
-type SyncManifest struct {
-	Images []SyncImage `yaml:"images"`
-}
-
-// SyncImage represents a single image entry in the manifest.
-type SyncImage struct {
-	Source    string   `yaml:"source"`
-	Platforms []string `yaml:"platforms"`
-}
-
-type syncTask struct {
-	Source string
-	Arch   string
-	Os     string
-}
-
-// displayName returns a human-readable label like "nginx:latest (linux/amd64)"
-func (t syncTask) displayName() string {
-	return fmt.Sprintf("%s (%s/%s)", t.Source, t.Os, t.Arch)
-}
-
-func readSyncManifest(path, defaultArch, defaultOs string) ([]syncTask, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read %s: %w", path, err)
-	}
-	var manifest SyncManifest
-	if err := yaml.Unmarshal(data, &manifest); err != nil {
-		return nil, fmt.Errorf("failed to parse YAML: %w", err)
-	}
-
-	var tasks []syncTask
-	for _, img := range manifest.Images {
-		if img.Source == "" {
-			continue
-		}
-		platforms := img.Platforms
-		if len(platforms) == 0 {
-			platforms = []string{defaultOs + "/" + defaultArch}
-		}
-		for _, plat := range platforms {
-			parts := strings.SplitN(plat, "/", 2)
-			if len(parts) != 2 {
-				return nil, fmt.Errorf("invalid platform format %q (expected os/arch)", plat)
-			}
-			tasks = append(tasks, syncTask{
-				Source: img.Source,
-				Arch:   parts[1],
-				Os:     parts[0],
-			})
-		}
-	}
-	return tasks, nil
-}
-
-func calculateAdaptiveWorkerCount(userSpecified bool, userValue, taskCount, cpuCount int) int {
-	if userSpecified {
-		return userValue
-	}
-
-	maxWorkers := cpuCount * 4
-	if taskCount < maxWorkers {
-		maxWorkers = taskCount
-	}
-	if maxWorkers < 1 {
-		maxWorkers = 1
-	}
-	return maxWorkers
-}
-
 func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syncTask,
 	workerCount int, force, dryRun, verbose bool, ctxDiff, ctxSync context.Context, outputFormat string) error {
 
@@ -259,6 +186,9 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syn
 	}
 
 	// Create use case for diff phase
+	cfg := *baseCfg
+	cfg.Force = force
+	cfg.DryRun = dryRun
 	diffUseCase := use_cases.NewSyncImagesUseCase(
 		factory.CreateDockerClient(),
 		factory.CreateRegistryClient(),
@@ -269,18 +199,7 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syn
 		factory.CreateSystemClient(),
 		factory.CreateImageIDService(),
 		use_cases.SyncImagesConfig{
-			RegistryHost:   baseCfg.Registry.Host,
-			RegistryUser:   baseCfg.Registry.Username,
-			RegistryPass:   baseCfg.Registry.Password,
-			RegistryNS:     baseCfg.Registry.Namespace,
-			RegistryArch:   baseCfg.Registry.Arch,
-			RegistryOs:     baseCfg.Registry.Os,
-			GithubOwner:    baseCfg.Github.Owner,
-			GithubRepo:     baseCfg.Github.Repo,
-			GithubToken:    baseCfg.Github.Token,
-			GithubWorkflow: baseCfg.Github.WorkflowID,
-			Force:          force,
-			DryRun:         dryRun,
+			Config: &cfg,
 		},
 	)
 

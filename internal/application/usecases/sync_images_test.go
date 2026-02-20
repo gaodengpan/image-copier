@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/gaodengpan/image-copier/internal/domain/services"
+	"github.com/gaodengpan/image-copier/internal/infrastructure/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -21,22 +22,23 @@ func newTestSyncUseCase(
 	systemClient.On("CommandExists", mock.Anything, "docker").Return(true, nil)
 	systemClient.On("DockerRunning", mock.Anything).Return(true, nil)
 
+	cfg := &config.Config{}
+	cfg.Registry.Host = "registry.com"
+	cfg.Registry.Username = "user"
+	cfg.Registry.Password = "pass"
+	cfg.Registry.Namespace = "ns"
+	cfg.Registry.Arch = "amd64"
+	cfg.Registry.Os = "linux"
+	cfg.Github.Owner = "owner"
+	cfg.Github.Repo = "repo"
+	cfg.Github.Token = "token"
+	cfg.Github.WorkflowID = "workflow"
+
 	return NewSyncImagesUseCase(
 		docker, registry, github, fs, nil, logger,
 		systemClient, services.NewImageIDService(),
 		SyncImagesConfig{
-			RegistryHost:   "registry.com",
-			RegistryUser:   "user",
-			RegistryPass:   "pass",
-			RegistryNS:     "ns",
-			RegistryArch:   "amd64",
-			RegistryOs:     "linux",
-			GithubOwner:    "owner",
-			GithubRepo:     "repo",
-			GithubToken:    "token",
-			GithubWorkflow: "workflow",
-			Force:          false,
-			DryRun:         false,
+			Config: cfg,
 		},
 	)
 }
@@ -195,16 +197,18 @@ func TestSyncImagesUseCase_Execute_DryRun(t *testing.T) {
 	registry.On("BuildDestImageID", mock.Anything, mock.Anything, mock.Anything).Return("registry.com/ns/image:latest")
 	registry.On("CheckImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(false, nil)
 
+	cfg := &config.Config{}
+	cfg.Registry.Host = "registry.com"
+	cfg.Registry.Username = "user"
+	cfg.Registry.Password = "pass"
+	cfg.Registry.Namespace = "ns"
+	cfg.DryRun = true
+
 	uc := NewSyncImagesUseCase(
 		docker, registry, github, fs, nil, logger,
 		nil, services.NewImageIDService(),
 		SyncImagesConfig{
-			RegistryHost: "registry.com",
-			RegistryUser: "user",
-			RegistryPass: "pass",
-			RegistryNS:   "ns",
-			Force:        false,
-			DryRun:       true,
+			Config: cfg,
 		},
 	)
 
@@ -272,16 +276,18 @@ func TestSyncImagesUseCase_WithCallback(t *testing.T) {
 
 	callback := new(mockSyncCallback)
 
+	cfg := &config.Config{}
+	cfg.Registry.Host = "registry.com"
+	cfg.Registry.Username = "user"
+	cfg.Registry.Password = "pass"
+	cfg.Registry.Namespace = "ns"
+	cfg.DryRun = true
+
 	uc := NewSyncImagesUseCase(
 		docker, registry, github, fs, nil, logger,
 		nil, services.NewImageIDService(),
 		SyncImagesConfig{
-			RegistryHost: "registry.com",
-			RegistryUser: "user",
-			RegistryPass: "pass",
-			RegistryNS:   "ns",
-			Force:        false,
-			DryRun:       true,
+			Config: cfg,
 		},
 	)
 

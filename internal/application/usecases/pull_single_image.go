@@ -2,11 +2,11 @@ package use_cases
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"strings"
 
 	"github.com/gaodengpan/image-copier/internal/application/ports"
+	domainerrors "github.com/gaodengpan/image-copier/internal/domain/errors"
 	"github.com/gaodengpan/image-copier/internal/domain/services"
 	"github.com/gaodengpan/image-copier/internal/domain/validators"
 )
@@ -69,7 +69,11 @@ func (uc *PullSingleImageUseCaseImpl) Execute(ctx context.Context, input PullSin
 	}
 
 	if !uc.imageValidator.IsValidImageName(input.ImageID) {
-		return PullSingleImageOutput{}, fmt.Errorf("invalid image name: %s", sanitizeForLog(input.ImageID))
+		return PullSingleImageOutput{}, domainerrors.NewImageError(
+			domainerrors.ErrInvalidImageName,
+			input.ImageID,
+			"invalid image name format",
+		)
 	}
 
 	uc.logger.Infof("Processing image: %s", sanitizeForLog(input.ImageID))
@@ -198,7 +202,11 @@ func (uc *PullSingleImageUseCaseImpl) waitForWorkflow(ctx context.Context, runID
 
 func (uc *PullSingleImageUseCaseImpl) downloadAndLoadImage(ctx context.Context, registryImageID, userImageTag, username, password string) error {
 	if !uc.imageValidator.IsValidImageName(registryImageID) {
-		return fmt.Errorf("invalid image name: %s", sanitizeForLog(registryImageID))
+		return domainerrors.NewImageError(
+			domainerrors.ErrInvalidImageName,
+			registryImageID,
+			"invalid image name format",
+		)
 	}
 
 	tmpPath, err := uc.fileSystem.CreateTempFile("image-copier-*.tar")
@@ -257,13 +265,14 @@ func (uc *PullSingleImageUseCaseImpl) prePullValidate(ctx context.Context) error
 	}
 
 	if len(validationErrors) > 0 {
-		return fmt.Errorf("pre-pull validation failed: %s", strings.Join(validationErrors, "; "))
+		return domainerrors.NewImageError(
+			domainerrors.ErrValidationFailed,
+			"",
+			"pre-pull validation failed: "+strings.Join(validationErrors, "; "),
+		)
 	}
 
 	return nil
 }
 
-func sanitizeForLog(input string) string {
-	hash := sha256.Sum256([]byte(input))
-	return fmt.Sprintf("%s%x%s", "[REDACTED:", hash[:8], "]")
-}
+var sanitizeForLog = services.SanitizeForLog
