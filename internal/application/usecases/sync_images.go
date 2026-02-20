@@ -11,7 +11,6 @@ import (
 	"github.com/gaodengpan/image-copier/internal/domain/services"
 	"github.com/gaodengpan/image-copier/internal/domain/validators"
 	"github.com/gaodengpan/image-copier/internal/infrastructure/config"
-	"github.com/gaodengpan/image-copier/pkg/progress"
 )
 
 type DiffResult struct {
