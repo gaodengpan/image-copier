@@ -11,10 +11,6 @@ import (
 	"github.com/gaodengpan/image-copier/internal/infrastructure/config"
 )
 
-func NewConfigCommand() *cobra.Command {
-	return NewConfigCommandWithConfigProvider(config.DefaultConfigProvider())
-}
-
 func NewConfigCommandWithConfigProvider(provider config.ConfigProvider) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",

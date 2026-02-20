@@ -101,9 +101,3 @@ func TestParseRetryConfig(t *testing.T) {
 	result = cfg.ParseRetryConfig()
 	assert.Equal(t, 3, result.MaxAttempts)
 }
-
-func TestDefaultRetryConfig(t *testing.T) {
-	cfg := DefaultRetryConfig()
-	assert.NotNil(t, cfg)
-	assert.Equal(t, 3, cfg.MaxAttempts)
-}

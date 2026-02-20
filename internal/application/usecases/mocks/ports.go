@@ -37,22 +37,3 @@ func (m *MockHTTPClient) Do(req *http.Request) (*http.Response, error) {
 }
 
 var _ ports.HTTPClient = (*MockHTTPClient)(nil)
-
-type MockCommandRunner struct {
-	mock.Mock
-}
-
-func (m *MockCommandRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
-	called := m.Called(ctx, name, args)
-	if called.Error(1) != nil {
-		return nil, called.Error(1)
-	}
-	return called.Get(0).([]byte), nil
-}
-
-func (m *MockCommandRunner) RunWithOutput(ctx context.Context, name string, args ...string) (string, string, error) {
-	called := m.Called(ctx, name, args)
-	return called.String(0), called.String(1), called.Error(2)
-}
-
-var _ ports.CommandRunner = (*MockCommandRunner)(nil)

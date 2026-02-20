@@ -4,11 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
-	"time"
 
 	"github.com/gaodengpan/image-copier/internal/infrastructure/encryption"
-	"github.com/gaodengpan/image-copier/pkg/retry"
 	"github.com/spf13/viper"
 )
 
@@ -201,37 +198,4 @@ func SafeLoadEncryptedConfig() (*Config, error) {
 		return nil, err
 	}
 	return cfg, nil
-}
-
-// ParseRetryConfigWithDeps is a helper function that demonstrates using the imported packages
-func (c *Config) ParseRetryConfigWithDeps() *retry.Config {
-	// This uses the imported packages: strconv, time, and retry
-	defaults := retry.DefaultConfig()
-
-	maxAttempts := defaults.MaxAttempts
-	if c.Retry.MaxAttempts != "" {
-		if v, err := strconv.Atoi(c.Retry.MaxAttempts); err == nil && v > 0 {
-			maxAttempts = v
-		}
-	}
-
-	initialInterval := defaults.InitialInterval
-	if c.Retry.InitialInterval != "" {
-		if v, err := time.ParseDuration(c.Retry.InitialInterval); err == nil && v > 0 {
-			initialInterval = v
-		}
-	}
-
-	maxInterval := defaults.MaxInterval
-	if c.Retry.MaxInterval != "" {
-		if v, err := time.ParseDuration(c.Retry.MaxInterval); err == nil && v > 0 {
-			maxInterval = v
-		}
-	}
-
-	return &retry.Config{
-		MaxAttempts:     maxAttempts,
-		InitialInterval: initialInterval,
-		MaxInterval:     maxInterval,
-	}
 }
