@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/gaodengpan/image-copier/internal/cli"
-	"github.com/gaodengpan/image-copier/internal/config"
+	"github.com/gaodengpan/image-copier/internal/adapters/primary/cli"
+	"github.com/gaodengpan/image-copier/internal/infrastructure/config"
 	"github.com/gaodengpan/image-copier/internal/version"
 )
 
@@ -29,7 +29,7 @@ through GitHub Actions when direct pulling is not possible due to network restri
 	rootCmd.AddCommand(cli.NewConfigCommandWithConfigProvider(configProvider))
 
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }

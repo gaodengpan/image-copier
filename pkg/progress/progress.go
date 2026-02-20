@@ -31,6 +31,7 @@ const (
 	StatusFailed
 	StatusSkipped
 	StatusDryRun
+	StatusCancelled
 )
 
 func (s ImageStatus) String() string {
@@ -47,6 +48,8 @@ func (s ImageStatus) String() string {
 		return "skipped"
 	case StatusDryRun:
 		return "dry-run"
+	case StatusCancelled:
+		return "cancelled"
 	default:
 		return "unknown"
 	}
@@ -70,11 +73,26 @@ type Progress struct {
 	total       int
 	startedAt   time.Time
 	mu          sync.Mutex
+	noOutput    bool
 }
 
 // NewProgress creates a new progress tracker with an mpb container.
 // workerCount determines how many worker status lines are displayed below the main bar.
-func NewProgress(total int, workerCount int) *Progress {
+// If noOutput is true, no UI is displayed (useful for JSON output mode).
+func NewProgress(total int, workerCount int, noOutput bool) *Progress {
+	if noOutput {
+		p := &Progress{
+			images:    make([]*ImageProgress, total),
+			total:     total,
+			startedAt: time.Now(),
+			noOutput:  true,
+		}
+		for i := 0; i < total; i++ {
+			p.images[i] = &ImageProgress{}
+		}
+		return p
+	}
+
 	container := mpb.New(
 		mpb.WithWidth(64),
 	)
@@ -130,6 +148,7 @@ func NewProgress(total int, workerCount int) *Progress {
 		images:      make([]*ImageProgress, total),
 		total:       total,
 		startedAt:   time.Now(),
+		noOutput:    false,
 	}
 
 	if total == 0 {
@@ -180,7 +199,7 @@ func (p *Progress) SetDuration(index int, d time.Duration) {
 // UpdateWorker sets the display text for a specific worker line.
 // Pass an empty string to clear the worker line (when idle between images).
 func (p *Progress) UpdateWorker(workerIdx int, imageName string) {
-	if workerIdx >= len(p.workerTexts) {
+	if p.noOutput || workerIdx >= len(p.workerTexts) {
 		return
 	}
 	if imageName == "" {
@@ -192,16 +211,21 @@ func (p *Progress) UpdateWorker(workerIdx int, imageName string) {
 
 // UpdateStage sets the stage display info for a worker.
 func (p *Progress) UpdateStage(workerIdx int, info StageInfo) {
-	if workerIdx < len(p.workerTexts) {
-		p.workerTexts[workerIdx].Store(info)
+	if p.noOutput || workerIdx >= len(p.workerTexts) {
+		return
 	}
+	p.workerTexts[workerIdx].Store(info)
 }
 
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen-3] + "..."
+// GetImages returns a copy of all images with their status.
+// This is useful for building result summaries after processing completes.
+func (p *Progress) GetImages() []*ImageProgress {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	result := make([]*ImageProgress, len(p.images))
+	copy(result, p.images)
+	return result
 }
 
 // hashSuffixRe matches a hex digest suffix (20+ hex chars) at the end of
@@ -243,7 +267,50 @@ func smartTruncate(s string, maxLen int) string {
 
 // Increment increments the main progress bar by 1
 func (p *Progress) Increment() {
+	if p.noOutput {
+		return
+	}
 	p.mainBar.Increment()
+}
+
+// SetInitialProgress sets the initial completed count (for already-skipped items)
+func (p *Progress) SetInitialProgress(count int) {
+	if p.noOutput {
+		return
+	}
+	p.mainBar.SetCurrent(int64(count))
+}
+
+// CompleteSkipped marks all images from index start as completed (for skipped items)
+func (p *Progress) CompleteSkipped(start int) {
+	if p.noOutput {
+		return
+	}
+	for i := start; i < len(p.images); i++ {
+		if p.images[i] != nil {
+			p.mainBar.Increment()
+		}
+	}
+}
+
+// AbortWorkers aborts all worker bars without printing summary
+func (p *Progress) AbortWorkers() {
+	if p.noOutput {
+		return
+	}
+	// Abort mainBar as well to prevent deadlock
+	p.mainBar.Abort(true)
+	for _, bar := range p.workerBars {
+		bar.Abort(true)
+	}
+}
+
+// WaitContainer waits for the mpb render loop to finish
+func (p *Progress) WaitContainer() {
+	if p.noOutput {
+		return
+	}
+	p.container.Wait()
 }
 
 // Wait waits for the mpb render loop to finish, then prints the summary
@@ -279,7 +346,7 @@ func (p *Progress) printSummary() {
 
 	totalDuration := time.Since(p.startedAt)
 
-	var succeeded, failed, skipped, dryRun int
+	var succeeded, failed, skipped, dryRun, cancelled int
 
 	for _, img := range p.images {
 		if img == nil {
@@ -294,15 +361,19 @@ func (p *Progress) printSummary() {
 			skipped++
 		case StatusDryRun:
 			dryRun++
+		case StatusCancelled:
+			cancelled++
 		}
 	}
 
+	totalFailed := failed + cancelled
+
 	if dryRun > 0 {
 		fmt.Printf("\nSummary: %d succeeded, %d skipped, %d dry-run, %d failed | Total: %s\n",
-			succeeded, skipped, dryRun, failed, formatDuration(totalDuration))
+			succeeded, skipped, dryRun, totalFailed, formatDuration(totalDuration))
 	} else {
 		fmt.Printf("\nSummary: %d succeeded, %d skipped, %d failed | Total: %s\n",
-			succeeded, skipped, failed, formatDuration(totalDuration))
+			succeeded, skipped, totalFailed, formatDuration(totalDuration))
 	}
 
 	for _, img := range p.images {
@@ -323,6 +394,12 @@ func (p *Progress) printSummary() {
 				msg += fmt.Sprintf(": %v", img.Error)
 			}
 			fmt.Println(msg)
+		case StatusCancelled:
+			msg := fmt.Sprintf("  ⊘ %s (%s)", img.Image, dur)
+			if img.Error != nil {
+				msg += fmt.Sprintf(": %v", img.Error)
+			}
+			fmt.Println(msg)
 		}
 	}
 }
@@ -330,5 +407,8 @@ func (p *Progress) printSummary() {
 // LogWriter returns an io.Writer that outputs text above the progress bars.
 // This leverages mpb's built-in io.Writer support on the Progress container.
 func (p *Progress) LogWriter() io.Writer {
+	if p.noOutput {
+		return io.Discard
+	}
 	return p.container
 }
