@@ -64,104 +64,6 @@ func ConfigFilePath() string {
 	return filepath.Join(configDir(), "config.yaml")
 }
 
-// LoadForTestingWithEnv loads configuration with environment variables for testing
-func LoadForTestingWithEnv(env map[string]string) (*Config, error) {
-	// Create a new viper instance for better test isolation
-	v := viper.New()
-
-	// Temporarily set environment variables
-	originalEnv := make(map[string]string)
-	for k, v := range env {
-		originalEnv[k] = os.Getenv(k)
-		os.Setenv(k, v)
-	}
-
-	// Defer restoring original environment values
-	defer func() {
-		for k, v := range originalEnv {
-			if v == "" {
-				os.Unsetenv(k)
-			} else {
-				os.Setenv(k, v)
-			}
-		}
-	}()
-
-	// Set default values
-	v.SetDefault("registry.arch", "amd64")
-	v.SetDefault("registry.os", "linux")
-	v.SetDefault("log_level", "info")
-	v.SetDefault("github.workflow_id", "image-copier-v2.yaml")
-
-	// Bind environment variables
-	v.BindEnv("github.owner", "GITHUB_OWNER")
-	v.BindEnv("github.repo", "GITHUB_REPO")
-	v.BindEnv("github.token", "GITHUB_TOKEN")
-	v.BindEnv("github.workflow_id", "GITHUB_WORKFLOW_ID")
-	v.BindEnv("registry.host", "REGISTRY_HOST")
-	v.BindEnv("registry.username", "REGISTRY_USERNAME")
-	v.BindEnv("registry.password", "REGISTRY_PASSWD")
-	v.BindEnv("registry.namespace", "REGISTRY_NAMESPACE")
-	v.BindEnv("registry.arch", "REGISTRY_ARCH")
-	v.BindEnv("registry.os", "REGISTRY_OS")
-	v.BindEnv("log_level", "LOG_LEVEL")
-
-	// Do NOT read any config file - only use environment variables and defaults
-	// This ensures complete test isolation
-
-	var cfg Config
-	if err := v.Unmarshal(&cfg); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
-	}
-
-	// Validate required fields
-	if err := validateConfig(&cfg); err != nil {
-		return nil, err
-	}
-
-	return &cfg, nil
-}
-
-// LoadForTesting loads configuration with better test isolation
-func LoadForTesting() (*Config, error) {
-	// Create a new viper instance for better test isolation
-	v := viper.New()
-
-	// Set default values
-	v.SetDefault("registry.arch", "amd64")
-	v.SetDefault("registry.os", "linux")
-	v.SetDefault("log_level", "info")
-	v.SetDefault("github.workflow_id", "image-copier-v2.yaml")
-
-	// Bind environment variables
-	v.BindEnv("github.owner", "GITHUB_OWNER")
-	v.BindEnv("github.repo", "GITHUB_REPO")
-	v.BindEnv("github.token", "GITHUB_TOKEN")
-	v.BindEnv("github.workflow_id", "GITHUB_WORKFLOW_ID")
-	v.BindEnv("registry.host", "REGISTRY_HOST")
-	v.BindEnv("registry.username", "REGISTRY_USERNAME")
-	v.BindEnv("registry.password", "REGISTRY_PASSWD")
-	v.BindEnv("registry.namespace", "REGISTRY_NAMESPACE")
-	v.BindEnv("registry.arch", "REGISTRY_ARCH")
-	v.BindEnv("registry.os", "REGISTRY_OS")
-	v.BindEnv("log_level", "LOG_LEVEL")
-
-	// Do NOT read any config file - only use environment variables and defaults
-	// This ensures complete test isolation
-
-	var cfg Config
-	if err := v.Unmarshal(&cfg); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
-	}
-
-	// Validate required fields
-	if err := validateConfig(&cfg); err != nil {
-		return nil, err
-	}
-
-	return &cfg, nil
-}
-
 // ValidateConfig validates the configuration
 func ValidateConfig(cfg *Config) error {
 	if cfg.Github.Owner == "" {
@@ -226,11 +128,6 @@ func (c *Config) ParseRetryConfig() *retry.Config {
 func GetConfigPath() string {
 	provider := NewViperConfigProvider()
 	return provider.GetConfigPath()
-}
-
-// DefaultRetryConfig returns the default retry configuration values
-func DefaultRetryConfig() *retry.Config {
-	return retry.DefaultConfig()
 }
 
 // ConfigBuilder provides a fluent interface for building Config instances
@@ -458,23 +355,7 @@ func (vp *ViperConfigProvider) GetConfigPath() string {
 	return ""
 }
 
-// LoadWithConfigPath loads configuration from a specific file path
-func LoadWithConfigPath(configPath string) (*Config, error) {
-	provider := NewViperConfigProvider()
-	return provider.LoadWithPaths(configPath)
-}
-
 // DefaultConfigProvider returns a ConfigProvider with default configuration
 func DefaultConfigProvider() ConfigProvider {
 	return NewEncryptedViperConfigProvider()
-}
-
-// NewDefaultConfigProvider creates a new instance of the default config provider (encrypted)
-func NewDefaultConfigProvider() ConfigProvider {
-	return NewEncryptedViperConfigProvider()
-}
-
-// NewPlainConfigProvider creates a new instance of the plain config provider (non-encrypted)
-func NewPlainConfigProvider() ConfigProvider {
-	return NewViperConfigProvider()
 }
