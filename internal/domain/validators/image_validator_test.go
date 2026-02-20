@@ -157,38 +157,6 @@ func TestImageValidator_containsDangerousChars(t *testing.T) {
 	}
 }
 
-func TestImageValidator_ValidateYAMLContent(t *testing.T) {
-	v := NewImageValidator()
-
-	tests := []struct {
-		name    string
-		content string
-		hasErr  bool
-	}{
-		{"valid yaml", "name: test", false},
-		{"invalid template", "{{ shell: 'ls' }}", true},
-		{"pipe to sh", "run: | sh", true},
-		{"ampersand", "run: && ls", true},
-		{"double pipe", "run: || ls", true},
-		{"semicolon", "run: ; ls", true},
-		{"backtick command", "run: `ls`", true},
-		{"dollar command", "run: $(ls)", true},
-		{"eval", "run: eval ls", true},
-		{"exec", "run: exec ls", true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := v.ValidateYAMLContent(tt.content)
-			if tt.hasErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
-		})
-	}
-}
-
 func TestLooksLikeMistypedImageTag(t *testing.T) {
 	tests := []struct {
 		input    string

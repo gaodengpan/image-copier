@@ -70,26 +70,6 @@ func (v *ImageValidator) ValidateFilePath(path string) bool {
 	return true
 }
 
-func (v *ImageValidator) ValidateYAMLContent(content string) error {
-	if strings.Contains(content, "{{") && strings.Contains(content, "shell") {
-		return &ValidationError{Message: "unsafe template construct detected"}
-	}
-
-	dangerousPatterns := []string{
-		"| sh", "| bash", "| zsh",
-		"&", "&&", "||", ";", "`", "$(",
-		"eval ", "exec ", "command ",
-	}
-
-	for _, pattern := range dangerousPatterns {
-		if strings.Contains(strings.ToLower(content), strings.ToLower(pattern)) {
-			return &ValidationError{Message: "unsafe content detected: " + pattern}
-		}
-	}
-
-	return nil
-}
-
 func (v *ImageValidator) ValidateCredentials(username, password string) bool {
 	if v.containsDangerousChars(username) || v.containsDangerousChars(password) {
 		return false
