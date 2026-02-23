@@ -56,7 +56,7 @@ func (e *ImageError) Cause() error {
 
 func (e *ImageError) Error() string {
 	if e.cause != nil {
-		return fmt.Sprintf("image error [%d] %s (image: %s): %w", e.code, e.message, e.cause)
+		return fmt.Sprintf("image error [%d] %s (image: %s): %v", e.code, e.message, e.imageID, e.cause)
 	}
 	return fmt.Sprintf("image error [%d] %s (image: %s)", e.code, e.message, e.imageID)
 }

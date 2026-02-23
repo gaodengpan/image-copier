@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/gaodengpan/image-copier/internal/application/ports"
+	"github.com/gaodengpan/image-copier/internal/domain/ports"
 	"github.com/stretchr/testify/mock"
 )
 

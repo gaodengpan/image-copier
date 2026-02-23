@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gaodengpan/image-copier/internal/application/ports"
 	domainerrors "github.com/gaodengpan/image-copier/internal/domain/errors"
+	"github.com/gaodengpan/image-copier/internal/domain/ports"
 	"github.com/gaodengpan/image-copier/internal/domain/services"
 	"github.com/gaodengpan/image-copier/internal/domain/validators"
 )

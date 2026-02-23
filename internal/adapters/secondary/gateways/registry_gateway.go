@@ -1,4 +1,4 @@
-package registry
+package gateways
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/gaodengpan/image-copier/internal/application/ports"
+	"github.com/gaodengpan/image-copier/internal/domain/ports"
 	"github.com/gaodengpan/image-copier/internal/domain/services"
 	"github.com/gaodengpan/image-copier/internal/domain/validators"
 	"github.com/gaodengpan/image-copier/internal/shared/errors"

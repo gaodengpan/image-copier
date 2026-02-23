@@ -3,7 +3,7 @@ package system
 import (
 	"context"
 
-	"github.com/gaodengpan/image-copier/internal/application/ports"
+	"github.com/gaodengpan/image-copier/internal/domain/ports"
 	"github.com/gaodengpan/image-copier/internal/utils"
 )
 

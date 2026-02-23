@@ -3,7 +3,7 @@ package use_cases
 import (
 	"context"
 
-	"github.com/gaodengpan/image-copier/internal/application/ports"
+	"github.com/gaodengpan/image-copier/internal/domain/ports"
 )
 
 type PullStage int

@@ -1,7 +1,7 @@
 package logging
 
 import (
-	"github.com/gaodengpan/image-copier/internal/application/ports"
+	"github.com/gaodengpan/image-copier/internal/domain/ports"
 	"github.com/sirupsen/logrus"
 )
 

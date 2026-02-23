@@ -1,4 +1,4 @@
-package github
+package gateways
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gaodengpan/image-copier/internal/application/ports"
+	"github.com/gaodengpan/image-copier/internal/domain/ports"
 	"github.com/gaodengpan/image-copier/internal/shared/errors"
 	"github.com/gaodengpan/image-copier/pkg/retry"
 )
