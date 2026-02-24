@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/gaodengpan/image-copier/internal/domain/ports"
+	"github.com/gaodengpan/image-copier/internal/domain/ports/output"
 	"github.com/gaodengpan/image-copier/internal/domain/services"
 	"github.com/gaodengpan/image-copier/internal/domain/validators"
 	"github.com/gaodengpan/image-copier/internal/shared/errors"
@@ -111,4 +111,4 @@ func (a *SkopeoAdapter) BuildDestImageID(sourceID, registryHost, registryNamespa
 	return a.imageIDService.BuildDestImageID(sourceID, registryHost, registryNamespace)
 }
 
-var _ ports.RegistryClient = (*SkopeoAdapter)(nil)
+var _ output.RegistryClient = (*SkopeoAdapter)(nil)

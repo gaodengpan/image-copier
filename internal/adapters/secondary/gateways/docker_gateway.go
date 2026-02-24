@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gaodengpan/image-copier/internal/domain/ports"
+	"github.com/gaodengpan/image-copier/internal/domain/ports/output"
 	"github.com/gaodengpan/image-copier/internal/domain/validators"
 	"github.com/gaodengpan/image-copier/internal/shared/errors"
 )
@@ -89,4 +89,4 @@ func (a *ExecDockerAdapter) LoadImage(ctx context.Context, tarPath string) error
 	return nil
 }
 
-var _ ports.DockerClient = (*ExecDockerAdapter)(nil)
+var _ output.DockerClient = (*ExecDockerAdapter)(nil)

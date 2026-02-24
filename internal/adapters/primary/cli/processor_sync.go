@@ -2,53 +2,39 @@ package cli
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/sirupsen/logrus"
 
 	"github.com/gaodengpan/image-copier/internal/application/usecases"
-	"github.com/gaodengpan/image-copier/internal/domain/ports"
+	"github.com/gaodengpan/image-copier/internal/domain/entities"
+	"github.com/gaodengpan/image-copier/internal/domain/ports/output"
 	"github.com/gaodengpan/image-copier/internal/domain/services"
 	"github.com/gaodengpan/image-copier/pkg/progress"
 )
-
-// SyncTask implements the WorkItem interface for image pull task processing
-type SyncTask struct {
-	Source string // 镜像源地址 (如 redis:latest, ghcr.io/tektoncd/pipeline/controller:v1.1.0)
-	Arch   string // 架构 (如 amd64, arm64)
-	Os     string // 操作系统 (如 linux)
-}
-
-func (t SyncTask) DisplayName() string {
-	if t.Arch == "" && t.Os == "" {
-		return t.Source
-	}
-	return fmt.Sprintf("%s (%s/%s)", t.Source, t.Os, t.Arch)
-}
 
 // SyncTasksProcessor handles processing of sync tasks from YAML manifests
 type SyncTasksProcessor struct {
 	logger         *logrus.Logger
 	force          bool
-	dockerClient   ports.DockerClient
-	registryClient ports.RegistryClient
-	githubClient   ports.GitHubClientWithRetry
-	fileSystem     ports.FileSystem
-	httpClient     ports.HTTPClient
-	systemClient   ports.SystemClient
+	dockerClient   output.DockerClient
+	registryClient output.RegistryClient
+	githubClient   output.GitHubClientWithRetry
+	fileSystem     output.FileSystem
+	httpClient     output.HTTPClient
+	systemClient   output.SystemClient
 	imageIDService *services.ImageIDService
 }
 
 func NewSyncTasksProcessor(
 	logger *logrus.Logger,
 	force bool,
-	dockerClient ports.DockerClient,
-	registryClient ports.RegistryClient,
-	githubClient ports.GitHubClientWithRetry,
-	fileSystem ports.FileSystem,
-	httpClient ports.HTTPClient,
-	systemClient ports.SystemClient,
+	dockerClient output.DockerClient,
+	registryClient output.RegistryClient,
+	githubClient output.GitHubClientWithRetry,
+	fileSystem output.FileSystem,
+	httpClient output.HTTPClient,
+	systemClient output.SystemClient,
 	imageIDService *services.ImageIDService,
 ) *SyncTasksProcessor {
 	return &SyncTasksProcessor{
@@ -65,7 +51,7 @@ func NewSyncTasksProcessor(
 }
 
 // Process handles a single sync task
-func (p *SyncTasksProcessor) Process(ctx context.Context, task WorkerPoolTask[SyncTask], progressMgr *progress.Progress, workerIdx int) error {
+func (p *SyncTasksProcessor) Process(ctx context.Context, task WorkerPoolTask[entities.SyncTask], progressMgr *progress.Progress, workerIdx int) error {
 	taskCfg := task.Config
 	taskCfg.Registry.Arch = task.Item.Arch
 	taskCfg.Registry.Os = task.Item.Os

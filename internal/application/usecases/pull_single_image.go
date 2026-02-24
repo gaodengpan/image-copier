@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	domainerrors "github.com/gaodengpan/image-copier/internal/domain/errors"
-	"github.com/gaodengpan/image-copier/internal/domain/ports"
+	"github.com/gaodengpan/image-copier/internal/domain/ports/output"
 	"github.com/gaodengpan/image-copier/internal/domain/services"
 	"github.com/gaodengpan/image-copier/internal/domain/validators"
 )
@@ -17,13 +17,13 @@ var (
 )
 
 type PullSingleImageUseCaseImpl struct {
-	dockerClient     ports.DockerClient
-	registryClient   ports.RegistryClient
-	githubClient     ports.GitHubClientWithRetry
-	fileSystem       ports.FileSystem
-	httpClient       ports.HTTPClient
-	logger           ports.Logger
-	systemClient     ports.SystemClient
+	dockerClient     output.DockerClient
+	registryClient   output.RegistryClient
+	githubClient     output.GitHubClientWithRetry
+	fileSystem       output.FileSystem
+	httpClient       output.HTTPClient
+	logger           output.Logger
+	systemClient     output.SystemClient
 	imageIDService   *services.ImageIDService
 	githubOwner      string
 	githubRepo       string
@@ -34,13 +34,13 @@ type PullSingleImageUseCaseImpl struct {
 }
 
 func NewPullSingleImageUseCase(
-	dockerClient ports.DockerClient,
-	registryClient ports.RegistryClient,
-	githubClient ports.GitHubClientWithRetry,
-	fileSystem ports.FileSystem,
-	httpClient ports.HTTPClient,
-	logger ports.Logger,
-	systemClient ports.SystemClient,
+	dockerClient output.DockerClient,
+	registryClient output.RegistryClient,
+	githubClient output.GitHubClientWithRetry,
+	fileSystem output.FileSystem,
+	httpClient output.HTTPClient,
+	logger output.Logger,
+	systemClient output.SystemClient,
 	imageIDService *services.ImageIDService,
 	githubOwner, githubRepo, githubToken, githubWorkflowID string,
 	stageCallback func(stage PullStage, polls int),

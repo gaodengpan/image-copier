@@ -1,7 +1,7 @@
 package logging
 
 import (
-	"github.com/gaodengpan/image-copier/internal/domain/ports"
+	"github.com/gaodengpan/image-copier/internal/domain/ports/output"
 	"github.com/sirupsen/logrus"
 )
 
@@ -37,4 +37,4 @@ func (l *LogrusLogger) Error(args ...interface{}) {
 	l.logger.Error(args...)
 }
 
-var _ ports.Logger = (*LogrusLogger)(nil)
+var _ output.Logger = (*LogrusLogger)(nil)

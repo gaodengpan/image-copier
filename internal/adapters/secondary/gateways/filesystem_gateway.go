@@ -3,7 +3,7 @@ package gateways
 import (
 	"os"
 
-	"github.com/gaodengpan/image-copier/internal/domain/ports"
+	"github.com/gaodengpan/image-copier/internal/domain/ports/output"
 	"github.com/gaodengpan/image-copier/internal/shared/errors"
 )
 
@@ -30,4 +30,4 @@ func (a *OSAdapter) RemoveFile(path string) error {
 	return nil
 }
 
-var _ ports.FileSystem = (*OSAdapter)(nil)
+var _ output.FileSystem = (*OSAdapter)(nil)

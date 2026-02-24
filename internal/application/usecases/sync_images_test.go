@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/gaodengpan/image-copier/internal/domain/entities"
 	"github.com/gaodengpan/image-copier/internal/domain/services"
 	"github.com/gaodengpan/image-copier/internal/infrastructure/config"
 	"github.com/stretchr/testify/assert"
@@ -70,8 +71,8 @@ func TestSyncImagesUseCase_Diff_AllImagesNeedSync(t *testing.T) {
 
 	uc := newTestSyncUseCase(docker, registry, github, fs, logger)
 
-	tasks := []SyncTask{
-		{Source: "nginx", Arch: "amd64", Os: "linux"},
+	tasks := []entities.SyncTask{
+		*entities.NewSyncTask("", "nginx", "amd64", "linux"),
 	}
 
 	synced, needsSync, err := uc.Diff(context.Background(), tasks, 1, false)
@@ -95,8 +96,8 @@ func TestSyncImagesUseCase_Diff_AllImagesSynced(t *testing.T) {
 
 	uc := newTestSyncUseCase(docker, registry, github, fs, logger)
 
-	tasks := []SyncTask{
-		{Source: "nginx", Arch: "amd64", Os: "linux"},
+	tasks := []entities.SyncTask{
+		*entities.NewSyncTask("", "nginx", "amd64", "linux"),
 	}
 
 	synced, needsSync, err := uc.Diff(context.Background(), tasks, 1, false)
@@ -120,8 +121,8 @@ func TestSyncImagesUseCase_Diff_ForceOverridesLocalCheck(t *testing.T) {
 
 	uc := newTestSyncUseCase(docker, registry, github, fs, logger)
 
-	tasks := []SyncTask{
-		{Source: "nginx", Arch: "amd64", Os: "linux"},
+	tasks := []entities.SyncTask{
+		*entities.NewSyncTask("", "nginx", "amd64", "linux"),
 	}
 
 	synced, needsSync, err := uc.Diff(context.Background(), tasks, 1, true)
@@ -148,10 +149,10 @@ func TestSyncImagesUseCase_Diff_MultipleImages(t *testing.T) {
 
 	uc := newTestSyncUseCase(docker, registry, github, fs, logger)
 
-	tasks := []SyncTask{
-		{Source: "nginx", Arch: "amd64", Os: "linux"},
-		{Source: "redis", Arch: "amd64", Os: "linux"},
-		{Source: "postgres", Arch: "amd64", Os: "linux"},
+	tasks := []entities.SyncTask{
+		*entities.NewSyncTask("", "nginx", "amd64", "linux"),
+		*entities.NewSyncTask("", "redis", "amd64", "linux"),
+		*entities.NewSyncTask("", "postgres", "amd64", "linux"),
 	}
 
 	synced, needsSync, err := uc.Diff(context.Background(), tasks, 2, false)
@@ -175,8 +176,8 @@ func TestSyncImagesUseCase_Diff_WithErrors(t *testing.T) {
 
 	uc := newTestSyncUseCase(docker, registry, github, fs, logger)
 
-	tasks := []SyncTask{
-		{Source: "nginx", Arch: "amd64", Os: "linux"},
+	tasks := []entities.SyncTask{
+		*entities.NewSyncTask("", "nginx", "amd64", "linux"),
 	}
 
 	synced, needsSync, err := uc.Diff(context.Background(), tasks, 1, false)
@@ -212,8 +213,8 @@ func TestSyncImagesUseCase_Execute_DryRun(t *testing.T) {
 		},
 	)
 
-	tasks := []SyncTask{
-		{Source: "nginx", Arch: "amd64", Os: "linux"},
+	tasks := []entities.SyncTask{
+		*entities.NewSyncTask("", "nginx", "amd64", "linux"),
 	}
 
 	input := SyncImagesInput{
@@ -240,7 +241,7 @@ func TestSyncImagesUseCase_Execute_NoTasks(t *testing.T) {
 	uc := newTestSyncUseCase(docker, registry, github, fs, logger)
 
 	input := SyncImagesInput{
-		Tasks:       []SyncTask{},
+		Tasks:       []entities.SyncTask{},
 		WorkerCount: 1,
 	}
 
@@ -249,48 +250,4 @@ func TestSyncImagesUseCase_Execute_NoTasks(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, synced, 0)
 	assert.Len(t, needsSync, 0)
-}
-
-type mockSyncCallback struct {
-	mock.Mock
-}
-
-func (m *mockSyncCallback) OnStart(workerIdx, taskIdx int, task SyncTask) {
-	m.Called(workerIdx, taskIdx, task)
-}
-
-func (m *mockSyncCallback) OnComplete(workerIdx, taskIdx int, task SyncTask, err error) {
-	m.Called(workerIdx, taskIdx, task, err)
-}
-
-func (m *mockSyncCallback) OnProgress(workerIdx int, progress ProgressInfo) {
-	m.Called(workerIdx, progress)
-}
-
-func TestSyncImagesUseCase_WithCallback(t *testing.T) {
-	docker := new(mockDockerClient)
-	registry := new(mockRegistryClient)
-	github := new(mockGitHubClient)
-	fs := new(mockFileSystem)
-	logger := new(mockLogger)
-
-	callback := new(mockSyncCallback)
-
-	cfg := &config.Config{}
-	cfg.Registry.Host = "registry.com"
-	cfg.Registry.Username = "user"
-	cfg.Registry.Password = "pass"
-	cfg.Registry.Namespace = "ns"
-	cfg.DryRun = true
-
-	uc := NewSyncImagesUseCase(
-		docker, registry, github, fs, nil, logger,
-		nil, services.NewImageIDService(),
-		SyncImagesConfig{
-			Config: cfg,
-		},
-	)
-
-	_ = callback
-	_ = uc
 }

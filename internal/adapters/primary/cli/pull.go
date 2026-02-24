@@ -16,6 +16,7 @@ import (
 
 	"github.com/gaodengpan/image-copier/internal/adapters"
 	"github.com/gaodengpan/image-copier/internal/application/usecases"
+	"github.com/gaodengpan/image-copier/internal/domain/entities"
 	"github.com/gaodengpan/image-copier/internal/infrastructure/config"
 	"github.com/gaodengpan/image-copier/pkg/logformat"
 	"github.com/gaodengpan/image-copier/pkg/progress"
@@ -175,14 +176,10 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syn
 
 	factory := adapters.NewAdapterFactory(logger)
 
-	// Convert CLI syncTask to use case SyncTask
-	useCaseTasks := make([]use_cases.SyncTask, len(tasks))
+	// Convert CLI syncTask to use case entities.SyncTask
+	useCaseTasks := make([]entities.SyncTask, len(tasks))
 	for i, t := range tasks {
-		useCaseTasks[i] = use_cases.SyncTask{
-			Source: t.Source,
-			Arch:   t.Arch,
-			Os:     t.Os,
-		}
+		useCaseTasks[i] = *entities.NewSyncTask("", t.Source, t.Arch, t.Os)
 	}
 
 	// Create use case for diff phase
@@ -291,15 +288,11 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syn
 	p.SetInitialProgress(len(synced))
 
 	// Create tasks for the worker pool (only needsSync)
-	syncTasks := make([]WorkerPoolTask[SyncTask], len(needsSync))
+	syncTasks := make([]WorkerPoolTask[entities.SyncTask], len(needsSync))
 	for i, t := range needsSync {
-		syncTasks[i] = WorkerPoolTask[SyncTask]{
-			Index: i,
-			Item: SyncTask{
-				Source: t.Source,
-				Arch:   t.Arch,
-				Os:     t.Os,
-			},
+		syncTasks[i] = WorkerPoolTask[entities.SyncTask]{
+			Index:  i,
+			Item:   *entities.NewSyncTask("", t.Source, t.Arch, t.Os),
 			Config: baseCfg,
 		}
 	}

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gaodengpan/image-copier/internal/domain/ports"
+	"github.com/gaodengpan/image-copier/internal/domain/ports/output"
 	"github.com/gaodengpan/image-copier/internal/shared/errors"
 	"github.com/gaodengpan/image-copier/pkg/retry"
 )
@@ -254,4 +254,4 @@ func (a *APIAdapter) findWorkflowRunID(ctx context.Context, owner, repo, workflo
 	}
 }
 
-var _ ports.GitHubClient = (*APIAdapter)(nil)
+var _ output.GitHubClient = (*APIAdapter)(nil)

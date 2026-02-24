@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/gaodengpan/image-copier/internal/domain/ports"
+	"github.com/gaodengpan/image-copier/internal/domain/ports/output"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -22,7 +22,7 @@ func (m *MockSystemClient) DockerRunning(ctx context.Context) (bool, error) {
 	return args.Bool(0), args.Error(1)
 }
 
-var _ ports.SystemClient = (*MockSystemClient)(nil)
+var _ output.SystemClient = (*MockSystemClient)(nil)
 
 type MockHTTPClient struct {
 	mock.Mock
@@ -36,4 +36,4 @@ func (m *MockHTTPClient) Do(req *http.Request) (*http.Response, error) {
 	return args.Get(0).(*http.Response), args.Error(1)
 }
 
-var _ ports.HTTPClient = (*MockHTTPClient)(nil)
+var _ output.HTTPClient = (*MockHTTPClient)(nil)

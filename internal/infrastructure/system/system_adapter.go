@@ -3,7 +3,7 @@ package system
 import (
 	"context"
 
-	"github.com/gaodengpan/image-copier/internal/domain/ports"
+	"github.com/gaodengpan/image-copier/internal/domain/ports/output"
 	"github.com/gaodengpan/image-copier/internal/utils"
 )
 
@@ -21,4 +21,4 @@ func (a *SystemAdapter) DockerRunning(ctx context.Context) (bool, error) {
 	return utils.CheckDockerService()
 }
 
-var _ ports.SystemClient = (*SystemAdapter)(nil)
+var _ output.SystemClient = (*SystemAdapter)(nil)

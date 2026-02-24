@@ -5,42 +5,30 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
-	"time"
 
-	"github.com/gaodengpan/image-copier/internal/domain/ports"
+	"github.com/gaodengpan/image-copier/internal/domain/entities"
+	"github.com/gaodengpan/image-copier/internal/domain/ports/output"
 	"github.com/gaodengpan/image-copier/internal/domain/services"
 	"github.com/gaodengpan/image-copier/internal/domain/validators"
 	"github.com/gaodengpan/image-copier/internal/infrastructure/config"
 )
 
 type DiffResult struct {
-	Task         SyncTask
+	Task         entities.SyncTask
 	RemoteExists bool
 	LocalExists  bool
 	RemoteError  error
 	LocalError   error
 }
 
-type SyncCallback interface {
-	OnStart(workerIdx, taskIdx int, task SyncTask)
-	OnComplete(workerIdx, taskIdx int, task SyncTask, err error)
-	OnProgress(workerIdx int, progress ProgressInfo)
-}
-
-type ProgressInfo struct {
-	Stage    string
-	Percent  float64
-	Duration time.Duration
-}
-
 type SyncImagesUseCaseImpl struct {
-	dockerClient     ports.DockerClient
-	registryClient   ports.RegistryClient
-	githubClient     ports.GitHubClientWithRetry
-	fileSystem       ports.FileSystem
-	httpClient       ports.HTTPClient
-	logger           ports.Logger
-	systemClient     ports.SystemClient
+	dockerClient     output.DockerClient
+	registryClient   output.RegistryClient
+	githubClient     output.GitHubClientWithRetry
+	fileSystem       output.FileSystem
+	httpClient       output.HTTPClient
+	logger           output.Logger
+	systemClient     output.SystemClient
 	imageIDService   *services.ImageIDService
 	imageValidator   *validators.ImageValidator
 	githubOwner      string
@@ -48,7 +36,6 @@ type SyncImagesUseCaseImpl struct {
 	githubToken      string
 	githubWorkflowID string
 	cfg              *SyncImagesConfig
-	callback         SyncCallback
 }
 
 type SyncImagesConfig struct {
@@ -56,13 +43,13 @@ type SyncImagesConfig struct {
 }
 
 func NewSyncImagesUseCase(
-	dockerClient ports.DockerClient,
-	registryClient ports.RegistryClient,
-	githubClient ports.GitHubClientWithRetry,
-	fileSystem ports.FileSystem,
-	httpClient ports.HTTPClient,
-	logger ports.Logger,
-	systemClient ports.SystemClient,
+	dockerClient output.DockerClient,
+	registryClient output.RegistryClient,
+	githubClient output.GitHubClientWithRetry,
+	fileSystem output.FileSystem,
+	httpClient output.HTTPClient,
+	logger output.Logger,
+	systemClient output.SystemClient,
 	imageIDService *services.ImageIDService,
 	cfg SyncImagesConfig,
 ) *SyncImagesUseCaseImpl {
@@ -81,12 +68,11 @@ func NewSyncImagesUseCase(
 		githubToken:      cfg.Config.Github.Token,
 		githubWorkflowID: cfg.Config.Github.WorkflowID,
 		cfg:              &cfg,
-		callback:         nil,
 	}
 }
 
 func (uc *SyncImagesUseCaseImpl) Execute(ctx context.Context, input SyncImagesInput) (
-	synced []SyncTask, needsSync []SyncTask, err error,
+	synced []entities.SyncTask, needsSync []entities.SyncTask, err error,
 ) {
 	uc.logger.Infof("Starting sync for %d images", len(input.Tasks))
 
@@ -108,17 +94,15 @@ func (uc *SyncImagesUseCaseImpl) Execute(ctx context.Context, input SyncImagesIn
 	return synced, needsSync, err
 }
 
-// Diff performs the diff phase to determine which images need syncing
-func (uc *SyncImagesUseCaseImpl) Diff(ctx context.Context, tasks []SyncTask, workerCount int, force bool) (
-	synced []SyncTask, needsSync []SyncTask, err error,
+func (uc *SyncImagesUseCaseImpl) Diff(ctx context.Context, tasks []entities.SyncTask, workerCount int, force bool) (
+	synced []entities.SyncTask, needsSync []entities.SyncTask, err error,
 ) {
 	results := uc.diffPhase(ctx, tasks, workerCount)
 	synced, needsSync = uc.partitionResults(results, force)
 	return synced, needsSync, nil
 }
 
-// Sync performs the sync phase for given tasks
-func (uc *SyncImagesUseCaseImpl) Sync(ctx context.Context, tasks []SyncTask, workerCount int) error {
+func (uc *SyncImagesUseCaseImpl) Sync(ctx context.Context, tasks []entities.SyncTask, workerCount int) error {
 	if len(tasks) == 0 {
 		return nil
 	}
@@ -133,7 +117,7 @@ func (uc *SyncImagesUseCaseImpl) Sync(ctx context.Context, tasks []SyncTask, wor
 	return uc.syncPhase(ctx, tasks, input)
 }
 
-func (uc *SyncImagesUseCaseImpl) diffPhase(ctx context.Context, tasks []SyncTask, workerCount int) []DiffResult {
+func (uc *SyncImagesUseCaseImpl) diffPhase(ctx context.Context, tasks []entities.SyncTask, workerCount int) []DiffResult {
 	results := make([]DiffResult, len(tasks))
 
 	sem := make(chan struct{}, workerCount)
@@ -141,7 +125,7 @@ func (uc *SyncImagesUseCaseImpl) diffPhase(ctx context.Context, tasks []SyncTask
 
 	for i, t := range tasks {
 		wg.Add(1)
-		go func(idx int, task SyncTask) {
+		go func(idx int, task entities.SyncTask) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
@@ -178,7 +162,7 @@ func (uc *SyncImagesUseCaseImpl) diffPhase(ctx context.Context, tasks []SyncTask
 	return results
 }
 
-func (uc *SyncImagesUseCaseImpl) partitionResults(results []DiffResult, force bool) (synced, needsSync []SyncTask) {
+func (uc *SyncImagesUseCaseImpl) partitionResults(results []DiffResult, force bool) (synced, needsSync []entities.SyncTask) {
 	for _, r := range results {
 		if r.LocalExists && !force {
 			synced = append(synced, r.Task)
@@ -189,7 +173,7 @@ func (uc *SyncImagesUseCaseImpl) partitionResults(results []DiffResult, force bo
 	return synced, needsSync
 }
 
-func (uc *SyncImagesUseCaseImpl) syncPhase(ctx context.Context, tasks []SyncTask, input SyncImagesInput) error {
+func (uc *SyncImagesUseCaseImpl) syncPhase(ctx context.Context, tasks []entities.SyncTask, input SyncImagesInput) error {
 	if len(tasks) == 0 {
 		return nil
 	}
@@ -239,7 +223,7 @@ func (uc *SyncImagesUseCaseImpl) syncPhase(ctx context.Context, tasks []SyncTask
 	return nil
 }
 
-func (uc *SyncImagesUseCaseImpl) processSingleImage(ctx context.Context, task SyncTask) error {
+func (uc *SyncImagesUseCaseImpl) processSingleImage(ctx context.Context, task entities.SyncTask) error {
 	uc.logger.Infof("Processing image: %s", task.Source)
 
 	stageCallback := func(stage PullStage, polls int) {}

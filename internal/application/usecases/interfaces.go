@@ -3,7 +3,8 @@ package use_cases
 import (
 	"context"
 
-	"github.com/gaodengpan/image-copier/internal/domain/ports"
+	"github.com/gaodengpan/image-copier/internal/domain/entities"
+	"github.com/gaodengpan/image-copier/internal/domain/ports/output"
 )
 
 type PullStage int
@@ -39,18 +40,8 @@ type PullSingleImageUseCase interface {
 	Execute(ctx context.Context, input PullSingleImageInput) (PullSingleImageOutput, error)
 }
 
-type SyncTask struct {
-	Source string
-	Arch   string
-	Os     string
-}
-
-func (t SyncTask) DisplayName() string {
-	return t.Source + " (" + t.Os + "/" + t.Arch + ")"
-}
-
 type SyncImagesInput struct {
-	Tasks         []SyncTask
+	Tasks         []entities.SyncTask
 	RegistryHost  string
 	RegistryUser  string
 	RegistryPass  string
@@ -58,10 +49,10 @@ type SyncImagesInput struct {
 	Force         bool
 	DryRun        bool
 	WorkerCount   int
-	Logger        ports.Logger
+	Logger        output.Logger
 	StageCallback func(stage PullStage, polls int)
 }
 
 type SyncImagesUseCase interface {
-	Execute(ctx context.Context, input SyncImagesInput) (synced []SyncTask, needsSync []SyncTask, err error)
+	Execute(ctx context.Context, input SyncImagesInput) (synced []entities.SyncTask, needsSync []entities.SyncTask, err error)
 }
