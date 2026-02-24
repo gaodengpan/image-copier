@@ -7,10 +7,8 @@
 make build              # 构建二进制文件
 make test               # 运行所有测试
 make test-coverage      # 运行测试并生成覆盖率报告
-make test-coverage-html # 生成 HTML 覆盖率报告
 make fmt                # 格式化代码 (gofmt + goimports)
 make vet                # 运行 go vet
-make lint               # 运行 golangci-lint
 make check-quality      # 运行所有质量检查
 ```
 
@@ -42,6 +40,10 @@ make check-quality      # 运行所有质量检查
 - 使用自定义错误类型（参见 `internal/shared/errors/errors.go`）
 - 错误消息应包含上下文信息
 - 不要忽略错误，使用 `_` 明确表示有意忽略
+
+### 代码依赖关系
+- application->usecase->domain<-infrastructure
+- 各层之间仅依赖接口, 禁止依赖具体实现
 
 ### 代码组织
 - 结构体字段按重要性排序：关键配置 → 依赖 → 状态 → 辅助字段
