@@ -77,7 +77,7 @@ func (uc *SyncImagesUseCaseImpl) Execute(ctx context.Context, input SyncImagesIn
 	uc.logger.Infof("Starting sync for %d images", len(input.Tasks))
 
 	results := uc.diffPhase(ctx, input.Tasks, input.WorkerCount)
-	synced, needsSync = uc.partitionResults(results, input.Force)
+	synced, needsSync = uc.partitionResults(results, input.Force, input)
 
 	uc.logger.Infof("Diff complete: %d synced, %d need sync", len(synced), len(needsSync))
 
@@ -98,7 +98,7 @@ func (uc *SyncImagesUseCaseImpl) Diff(ctx context.Context, tasks []entities.Sync
 	synced []entities.SyncTask, needsSync []entities.SyncTask, err error,
 ) {
 	results := uc.diffPhase(ctx, tasks, workerCount)
-	synced, needsSync = uc.partitionResults(results, force)
+	synced, needsSync = uc.partitionResults(results, force, SyncImagesInput{})
 	return synced, needsSync, nil
 }
 
@@ -162,12 +162,18 @@ func (uc *SyncImagesUseCaseImpl) diffPhase(ctx context.Context, tasks []entities
 	return results
 }
 
-func (uc *SyncImagesUseCaseImpl) partitionResults(results []DiffResult, force bool) (synced, needsSync []entities.SyncTask) {
+func (uc *SyncImagesUseCaseImpl) partitionResults(results []DiffResult, force bool, input SyncImagesInput) (synced, needsSync []entities.SyncTask) {
 	for _, r := range results {
-		if r.LocalExists && !force {
-			synced = append(synced, r.Task)
-		} else {
+		shouldSync := !r.LocalExists || force
+
+		if !shouldSync && input.TargetType == output.SyncTargetRegistry && input.TargetStrategy != nil {
+			shouldSync = true
+		}
+
+		if shouldSync {
 			needsSync = append(needsSync, r.Task)
+		} else {
+			synced = append(synced, r.Task)
 		}
 	}
 	return synced, needsSync
@@ -205,7 +211,7 @@ func (uc *SyncImagesUseCaseImpl) syncPhase(ctx context.Context, tasks []entities
 				}
 
 				task := tasks[idx]
-				err := uc.processSingleImage(ctx, task)
+				err := uc.processSingleImage(ctx, task, input)
 				if err != nil {
 					uc.logger.Errorf("Failed to sync %s: %v", task.Source, err)
 					atomic.AddInt32(&failCount, 1)
@@ -223,8 +229,12 @@ func (uc *SyncImagesUseCaseImpl) syncPhase(ctx context.Context, tasks []entities
 	return nil
 }
 
-func (uc *SyncImagesUseCaseImpl) processSingleImage(ctx context.Context, task entities.SyncTask) error {
+func (uc *SyncImagesUseCaseImpl) processSingleImage(ctx context.Context, task entities.SyncTask, input SyncImagesInput) error {
 	uc.logger.Infof("Processing image: %s", task.Source)
+
+	if input.TargetType == output.SyncTargetRegistry && input.TargetStrategy != nil {
+		return uc.syncToPrivateRegistry(ctx, task, input)
+	}
 
 	stageCallback := func(stage PullStage, polls int) {}
 
@@ -257,4 +267,65 @@ func (uc *SyncImagesUseCaseImpl) processSingleImage(ctx context.Context, task en
 	})
 
 	return err
+}
+
+func (uc *SyncImagesUseCaseImpl) syncToPrivateRegistry(ctx context.Context, task entities.SyncTask, input SyncImagesInput) error {
+	if input.TargetStrategy == nil {
+		return fmt.Errorf("target strategy is required for registry sync")
+	}
+
+	targetRegistry := uc.getTargetRegistry(input)
+	if targetRegistry == nil {
+		return fmt.Errorf("target registry %s not found in configuration", input.TargetRegistry)
+	}
+
+	opts := output.SyncTargetOptions{
+		SourceImageID:  task.Source,
+		TargetImageTag: task.Source,
+
+		SourceRegistryHost:     uc.cfg.Config.Registry.Host,
+		SourceRegistryUsername: uc.cfg.Config.Registry.Username,
+		SourceRegistryPassword: uc.cfg.Config.Registry.Password,
+		SourceRegistryNS:       uc.cfg.Config.Registry.Namespace,
+
+		TargetRegistryHost:     targetRegistry.Host,
+		TargetRegistryUsername: targetRegistry.Username,
+		TargetRegistryPassword: targetRegistry.Password,
+	}
+
+	exists, err := input.TargetStrategy.ExistsInTarget(ctx, opts)
+	if err != nil {
+		uc.logger.Warn("Failed to check if image exists in target registry: ", err)
+	}
+
+	if exists && !input.Force {
+		uc.logger.Infof("Image %s already exists in target registry, skipping", task.Source)
+		return nil
+	}
+
+	if input.DryRun {
+		uc.logger.Infof("[dry-run] Would sync %s to private registry %s", task.Source, targetRegistry.Host)
+		return nil
+	}
+
+	return input.TargetStrategy.SyncFromRegistry(ctx, opts)
+}
+
+func (uc *SyncImagesUseCaseImpl) getTargetRegistry(input SyncImagesInput) *config.PrivateRegistry {
+	if input.TargetRegistry == "" {
+		return nil
+	}
+
+	for _, reg := range input.PrivateRegistries {
+		if reg.Name == input.TargetRegistry {
+			return &config.PrivateRegistry{
+				Name:     reg.Name,
+				Host:     reg.Host,
+				Username: reg.Username,
+				Password: reg.Password,
+			}
+		}
+	}
+
+	return uc.cfg.Config.GetPrivateRegistryByName(input.TargetRegistry)
 }

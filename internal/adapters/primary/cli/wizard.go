@@ -25,6 +25,8 @@ type ConfigData struct {
 	RegistryNamespace string
 	RegistryArch      string
 	RegistryOs        string
+
+	PrivateRegistries []config.PrivateRegistry
 }
 
 // RunWizard runs the interactive configuration wizard
@@ -111,6 +113,27 @@ func RunWizard(ctx context.Context, skipExisting bool, provider config.ConfigPro
 	data.RegistryOs = promptString(reader, "Default operating system",
 		data.RegistryOs, "")
 
+	// Private Registries Configuration
+	fmt.Println("\n--- Private Registries Configuration ---")
+	addMore := promptYesNo(reader, "Add a private registry?", false)
+	for addMore {
+		var privReg config.PrivateRegistry
+		privReg.Name = promptString(reader, "Private registry name (e.g., harbor)",
+			"", "")
+		privReg.Host = promptString(reader, "Private registry host (e.g., harbor.internal.com)",
+			"", "")
+		privReg.Username = promptString(reader, "Private registry username",
+			"", "")
+		privReg.Password = promptString(reader, "Private registry password",
+			"", "(leave masked to keep existing)")
+
+		if privReg.Name != "" && privReg.Host != "" {
+			data.PrivateRegistries = append(data.PrivateRegistries, privReg)
+		}
+
+		addMore = promptYesNo(reader, "Add another private registry?", false)
+	}
+
 	return data, nil
 }
 
@@ -120,6 +143,15 @@ func WriteConfigFile(data *ConfigData, path string) error {
 	encryptedData, err := encryptConfigData(data)
 	if err != nil {
 		return fmt.Errorf("failed to encrypt config data: %w", err)
+	}
+
+	privateRegsContent := ""
+	for _, reg := range encryptedData.PrivateRegistries {
+		privateRegsContent += fmt.Sprintf(`  - name: %q
+    host: %q
+    username: %q
+    password: %q
+`, reg.Name, reg.Host, reg.Username, reg.Password)
 	}
 
 	// Write config file directly as YAML
@@ -149,7 +181,9 @@ registry:
   # Operating system for multi-platform images (default: linux)
   os: %q
 
-# Retry Configuration
+# Private Registries Configuration
+private_registries:
+%s# Retry Configuration
 retry:
   # Maximum number of retry attempts
   max_attempts: "3"
@@ -171,6 +205,7 @@ log_level: "info"
 		encryptedData.RegistryNamespace,
 		encryptedData.RegistryArch,
 		encryptedData.RegistryOs,
+		privateRegsContent,
 	)
 
 	return os.WriteFile(path, []byte(content), 0644)
@@ -198,6 +233,7 @@ func encryptConfigData(data *ConfigData) (*ConfigData, error) {
 		RegistryNamespace: data.RegistryNamespace,
 		RegistryArch:      data.RegistryArch,
 		RegistryOs:        data.RegistryOs,
+		PrivateRegistries: data.PrivateRegistries,
 	}
 
 	// Encrypt sensitive fields if they're not already encrypted
@@ -223,6 +259,25 @@ func encryptConfigData(data *ConfigData) (*ConfigData, error) {
 			return nil, fmt.Errorf("failed to encrypt registry password: %w", err)
 		}
 		encryptedData.RegistryPassword = encryptedPassword
+	}
+
+	// Encrypt private registry credentials
+	for i, reg := range data.PrivateRegistries {
+		if reg.Username != "" && !strings.HasPrefix(reg.Username, "encrypted:") {
+			encryptedUsername, err := encryptor.EncryptValue(reg.Username)
+			if err != nil {
+				return nil, fmt.Errorf("failed to encrypt private registry username: %w", err)
+			}
+			encryptedData.PrivateRegistries[i].Username = encryptedUsername
+		}
+
+		if reg.Password != "" && !strings.HasPrefix(reg.Password, "encrypted:") {
+			encryptedPassword, err := encryptor.EncryptValue(reg.Password)
+			if err != nil {
+				return nil, fmt.Errorf("failed to encrypt private registry password: %w", err)
+			}
+			encryptedData.PrivateRegistries[i].Password = encryptedPassword
+		}
 	}
 
 	return encryptedData, nil

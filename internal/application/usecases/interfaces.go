@@ -51,6 +51,16 @@ type SyncImagesInput struct {
 	WorkerCount   int
 	Logger        output.Logger
 	StageCallback func(stage PullStage, polls int)
+
+	TargetType        output.SyncTargetType
+	TargetStrategy    output.SyncTargetStrategy
+	TargetRegistry    string
+	PrivateRegistries []struct {
+		Name     string
+		Host     string
+		Username string
+		Password string
+	}
 }
 
 type SyncImagesUseCase interface {

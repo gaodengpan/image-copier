@@ -15,8 +15,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/gaodengpan/image-copier/internal/adapters"
-	"github.com/gaodengpan/image-copier/internal/application/usecases"
+	"github.com/gaodengpan/image-copier/internal/adapters/secondary/gateways"
+	use_cases "github.com/gaodengpan/image-copier/internal/application/usecases"
 	"github.com/gaodengpan/image-copier/internal/domain/entities"
+	"github.com/gaodengpan/image-copier/internal/domain/ports/output"
 	"github.com/gaodengpan/image-copier/internal/infrastructure/config"
 	"github.com/gaodengpan/image-copier/pkg/logformat"
 	"github.com/gaodengpan/image-copier/pkg/progress"
@@ -24,15 +26,17 @@ import (
 
 // PullCommandOptions defines options for the pull command
 type PullCommandOptions struct {
-	Arch        string
-	OsType      string
-	FilePath    string
-	WorkerCount int
-	Force       bool
-	DryRun      bool
-	Verbose     bool
-	Output      string
-	Timeout     time.Duration
+	Arch           string
+	OsType         string
+	FilePath       string
+	WorkerCount    int
+	Force          bool
+	DryRun         bool
+	Verbose        bool
+	Output         string
+	Timeout        time.Duration
+	Target         string
+	TargetRegistry string
 }
 
 // NewPullCommandWithConfigProvider creates a new pull command that accepts a ConfigProvider
@@ -45,15 +49,17 @@ func NewPullCommandWithConfigProvider(configProvider config.ConfigProvider) *cob
 // NewPullCommandWithConfigProviderAndOptions creates a new pull command with a ConfigProvider and specified options
 func NewPullCommandWithConfigProviderAndOptions(configProvider config.ConfigProvider, opts PullCommandOptions) *cobra.Command {
 	var (
-		arch        = opts.Arch
-		osType      = opts.OsType
-		filePath    = opts.FilePath
-		workerCount = opts.WorkerCount
-		force       = opts.Force
-		dryRun      = opts.DryRun
-		verbose     = opts.Verbose
-		output      = opts.Output
-		timeout     = opts.Timeout
+		arch           = opts.Arch
+		osType         = opts.OsType
+		filePath       = opts.FilePath
+		workerCount    = opts.WorkerCount
+		force          = opts.Force
+		dryRun         = opts.DryRun
+		verbose        = opts.Verbose
+		output         = opts.Output
+		timeout        = opts.Timeout
+		target         = opts.Target
+		targetRegistry = opts.TargetRegistry
 	)
 
 	cmd := &cobra.Command{
@@ -120,7 +126,7 @@ Supports two modes:
 					return nil
 				}
 				workerCount = calculateAdaptiveWorkerCount(jobsSpecified, workerCount, len(tasks), runtime.NumCPU())
-				return processSyncTasks(logger, baseCfg, tasks, workerCount, force, dryRun, verbose, ctxNoTimeout, ctx, output)
+				return processSyncTasks(logger, baseCfg, tasks, workerCount, force, dryRun, verbose, ctxNoTimeout, ctx, output, target, targetRegistry)
 			}
 
 			// === 命令式模式（CLI 参数）===
@@ -143,7 +149,7 @@ Supports two modes:
 			}
 
 			workerCount = calculateAdaptiveWorkerCount(jobsSpecified, workerCount, len(tasks), runtime.NumCPU())
-			return processSyncTasks(logger, baseCfg, tasks, workerCount, force, dryRun, verbose, ctxNoTimeout, ctx, output)
+			return processSyncTasks(logger, baseCfg, tasks, workerCount, force, dryRun, verbose, ctxNoTimeout, ctx, output, target, targetRegistry)
 		},
 	}
 
@@ -157,6 +163,8 @@ Supports two modes:
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show detailed log output above progress bars")
 	cmd.Flags().StringVarP(&output, "output", "o", "text", "Output format: text or json")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "Overall timeout for batch sync (e.g., 5m, 1h). Default: no timeout")
+	cmd.Flags().StringVar(&target, "target", "docker", "Sync target: docker or registry")
+	cmd.Flags().StringVar(&targetRegistry, "registry", "", "Target registry name (required when --target=registry)")
 
 	cmd.SilenceUsage = true
 
@@ -164,7 +172,8 @@ Supports two modes:
 }
 
 func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syncTask,
-	workerCount int, force, dryRun, verbose bool, ctxDiff, ctxSync context.Context, outputFormat string) error {
+	workerCount int, force, dryRun, verbose bool, ctxDiff, ctxSync context.Context, outputFormat string,
+	target string, targetRegistry string) error {
 
 	var presenter PullPresenter
 	if outputFormat == "json" {
@@ -175,6 +184,31 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syn
 	presenter.PresentCheckingImageCount(len(tasks))
 
 	factory := adapters.NewAdapterFactory(logger)
+
+	var targetStrategy output.SyncTargetStrategy
+	var targetType output.SyncTargetType
+
+	if target == "registry" {
+		if targetRegistry == "" {
+			return fmt.Errorf("--registry is required when --target=registry")
+		}
+
+		reg := baseCfg.GetPrivateRegistryByName(targetRegistry)
+		if reg == nil {
+			return fmt.Errorf("private registry %q not found in configuration", targetRegistry)
+		}
+
+		targetType = output.SyncTargetRegistry
+		targetStrategy = gateways.NewRegistrySyncStrategy(factory.CreateRegistryClient())
+	} else {
+		targetType = output.SyncTargetDocker
+		targetStrategy = gateways.NewDockerSyncStrategy(
+			factory.CreateDockerClient(),
+			factory.CreateRegistryClient(),
+			factory.CreateFileSystem(),
+		)
+	}
+	_ = targetType
 
 	// Convert CLI syncTask to use case entities.SyncTask
 	useCaseTasks := make([]entities.SyncTask, len(tasks))
@@ -297,6 +331,26 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syn
 		}
 	}
 
+	privateRegs := make([]struct {
+		Name     string
+		Host     string
+		Username string
+		Password string
+	}, len(baseCfg.PrivateRegistries))
+	for i, r := range baseCfg.PrivateRegistries {
+		privateRegs[i] = struct {
+			Name     string
+			Host     string
+			Username string
+			Password string
+		}{
+			Name:     r.Name,
+			Host:     r.Host,
+			Username: r.Username,
+			Password: r.Password,
+		}
+	}
+
 	// Create processor
 	processor := NewSyncTasksProcessor(
 		logger,
@@ -308,7 +362,7 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syn
 		factory.CreateHTTPClient(),
 		factory.CreateSystemClient(),
 		factory.CreateImageIDService(),
-	)
+	).WithTargetStrategy(targetStrategy, targetType, targetRegistry, privateRegs)
 
 	// Execute with inline worker pool (skip progress.Wait() auto-summary)
 	startTime := time.Now()

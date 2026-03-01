@@ -7,6 +7,7 @@ import (
 
 	"github.com/gaodengpan/image-copier/internal/infrastructure/config"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -554,4 +555,129 @@ func TestCLIPresenter(t *testing.T) {
 	t.Run("PresentError", func(t *testing.T) {
 		presenter.PresentError(assert.AnError)
 	})
+}
+
+func TestPullCommandFlags(t *testing.T) {
+	mockProvider := &MockConfigProvider{
+		LoadFunc: func() (*config.Config, error) {
+			return &config.Config{
+				Github: struct {
+					Owner      string "mapstructure:\"owner\""
+					Repo       string "mapstructure:\"repo\""
+					Token      string "mapstructure:\"token\""
+					WorkflowID string "mapstructure:\"workflow_id\""
+				}{
+					Owner:      "test-owner",
+					Repo:       "test-repo",
+					Token:      "test-token",
+					WorkflowID: "test-workflow",
+				},
+				Registry: struct {
+					Host      string "mapstructure:\"host\""
+					Username  string "mapstructure:\"username\""
+					Password  string "mapstructure:\"password\""
+					Namespace string "mapstructure:\"namespace\""
+					Arch      string "mapstructure:\"arch\""
+					Os        string "mapstructure:\"os\""
+				}{
+					Host:      "registry.example.com",
+					Namespace: "test-namespace",
+					Username:  "test-user",
+					Password:  "test-pass",
+					Arch:      "amd64",
+					Os:        "linux",
+				},
+				LogLevel: "info",
+			}, nil
+		},
+	}
+
+	tests := []struct {
+		name  string
+		args  []string
+		check func(*testing.T, *cobra.Command)
+	}{
+		{
+			name: "jobs flag exists",
+			args: []string{"nginx:latest"},
+			check: func(t *testing.T, cmd *cobra.Command) {
+				flag := cmd.Flags().Lookup("jobs")
+				assert.NotNil(t, flag)
+			},
+		},
+		{
+			name: "output flag exists",
+			args: []string{"nginx:latest"},
+			check: func(t *testing.T, cmd *cobra.Command) {
+				flag := cmd.Flags().Lookup("output")
+				assert.NotNil(t, flag)
+				assert.Equal(t, "text", flag.Value.String())
+			},
+		},
+		{
+			name: "timeout flag exists",
+			args: []string{"nginx:latest"},
+			check: func(t *testing.T, cmd *cobra.Command) {
+				flag := cmd.Flags().Lookup("timeout")
+				assert.NotNil(t, flag)
+			},
+		},
+		{
+			name: "target flag exists",
+			args: []string{"nginx:latest"},
+			check: func(t *testing.T, cmd *cobra.Command) {
+				flag := cmd.Flags().Lookup("target")
+				assert.NotNil(t, flag)
+				assert.Equal(t, "docker", flag.Value.String())
+			},
+		},
+		{
+			name: "registry flag exists",
+			args: []string{"nginx:latest"},
+			check: func(t *testing.T, cmd *cobra.Command) {
+				flag := cmd.Flags().Lookup("registry")
+				assert.NotNil(t, flag)
+			},
+		},
+		{
+			name: "all flags exist",
+			args: []string{"nginx:latest"},
+			check: func(t *testing.T, cmd *cobra.Command) {
+				assert.NotNil(t, cmd.Flags().Lookup("arch"))
+				assert.NotNil(t, cmd.Flags().Lookup("os"))
+				assert.NotNil(t, cmd.Flags().Lookup("file"))
+				assert.NotNil(t, cmd.Flags().Lookup("jobs"))
+				assert.NotNil(t, cmd.Flags().Lookup("force"))
+				assert.NotNil(t, cmd.Flags().Lookup("dry-run"))
+				assert.NotNil(t, cmd.Flags().Lookup("verbose"))
+				assert.NotNil(t, cmd.Flags().Lookup("output"))
+				assert.NotNil(t, cmd.Flags().Lookup("timeout"))
+				assert.NotNil(t, cmd.Flags().Lookup("target"))
+				assert.NotNil(t, cmd.Flags().Lookup("registry"))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := NewPullCommandWithConfigProvider(mockProvider)
+			cmd.SetArgs(tt.args)
+			tt.check(t, cmd)
+		})
+	}
+}
+
+func TestPullCommandDefaultValues(t *testing.T) {
+	mockProvider := &MockConfigProvider{
+		LoadFunc: func() (*config.Config, error) {
+			return &config.Config{}, nil
+		},
+	}
+
+	cmd := NewPullCommandWithConfigProvider(mockProvider)
+
+	assert.Equal(t, "3", cmd.Flags().Lookup("jobs").DefValue)
+	assert.Equal(t, "text", cmd.Flags().Lookup("output").DefValue)
+	assert.Equal(t, "docker", cmd.Flags().Lookup("target").DefValue)
+	assert.Equal(t, "0s", cmd.Flags().Lookup("timeout").DefValue)
 }

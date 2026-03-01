@@ -45,9 +45,27 @@ type Config struct {
 		MaxInterval     string `mapstructure:"max_interval"`
 	} `mapstructure:"retry"`
 
+	PrivateRegistries []PrivateRegistry `mapstructure:"private_registries"`
+
 	LogLevel string `mapstructure:"log_level"`
 	Force    bool
 	DryRun   bool
+}
+
+type PrivateRegistry struct {
+	Name     string `mapstructure:"name"`
+	Host     string `mapstructure:"host"`
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
+}
+
+func (c *Config) GetPrivateRegistryByName(name string) *PrivateRegistry {
+	for i := range c.PrivateRegistries {
+		if c.PrivateRegistries[i].Name == name {
+			return &c.PrivateRegistries[i]
+		}
+	}
+	return nil
 }
 
 // configDir returns the XDG-compliant configuration directory.
@@ -231,6 +249,18 @@ func (cb *ConfigBuilder) WithRetryConfig(retryMaxAttempts, retryInitialInterval,
 	cb.config.Retry.MaxAttempts = retryMaxAttempts
 	cb.config.Retry.InitialInterval = retryInitialInterval
 	cb.config.Retry.MaxInterval = retryMaxInterval
+	return cb
+}
+
+// WithPrivateRegistry adds a private registry to the configuration
+func (cb *ConfigBuilder) WithPrivateRegistry(registry PrivateRegistry) *ConfigBuilder {
+	cb.config.PrivateRegistries = append(cb.config.PrivateRegistries, registry)
+	return cb
+}
+
+// WithPrivateRegistries sets all private registries
+func (cb *ConfigBuilder) WithPrivateRegistries(registries []PrivateRegistry) *ConfigBuilder {
+	cb.config.PrivateRegistries = registries
 	return cb
 }
 
