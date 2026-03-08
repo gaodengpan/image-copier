@@ -27,7 +27,7 @@
 - **Commit**: `fix(usecase): use source field for task removal comparison`
 
 ### 1.3 Add nil checks in Presenter
-- **Do**:
+- [x] Done
   1. Read `internal/adapters/primary/cli/sync_presenter.go:241-242`
   2. Add nil checks before calling `PresentSyncPhaseResult` and `PresentDistributePhaseResult`
   3. Handle nil case gracefully (skip or log warning)
