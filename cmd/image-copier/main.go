@@ -26,6 +26,7 @@ through GitHub Actions when direct pulling is not possible due to network restri
 	configProvider := config.DefaultConfigProvider()
 
 	rootCmd.AddCommand(cli.NewPullCommandWithConfigProvider(configProvider))
+	rootCmd.AddCommand(cli.NewSyncCommand(configProvider))
 	rootCmd.AddCommand(cli.NewConfigCommandWithConfigProvider(configProvider))
 
 	if err := rootCmd.Execute(); err != nil {

@@ -2,6 +2,7 @@ package errors
 
 import "fmt"
 
+// AdapterError represents errors from the adapter layer (external services)
 type AdapterError struct {
 	Adapter   string
 	Operation string
@@ -26,6 +27,42 @@ func NewAdapterError(adapter, operation, message string, cause error) *AdapterEr
 		Operation: operation,
 		Message:   message,
 		Cause:     cause,
+	}
+}
+
+// DomainError represents errors from the domain layer (business rule violations)
+type DomainError struct {
+	Entity    string
+	Operation string
+	Message   string
+}
+
+func (e *DomainError) Error() string {
+	return fmt.Sprintf("%s domain error during %s: %s", e.Entity, e.Operation, e.Message)
+}
+
+func NewDomainError(entity, operation, message string) *DomainError {
+	return &DomainError{
+		Entity:    entity,
+		Operation: operation,
+		Message:   message,
+	}
+}
+
+// ValidationError represents errors from input validation
+type ValidationError struct {
+	Field   string
+	Message string
+}
+
+func (e *ValidationError) Error() string {
+	return fmt.Sprintf("validation error: %s - %s", e.Field, e.Message)
+}
+
+func NewValidationError(field, message string) *ValidationError {
+	return &ValidationError{
+		Field:   field,
+		Message: message,
 	}
 }
 

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"github.com/gaodengpan/image-copier/internal/domain/ports/output"
 	"github.com/gaodengpan/image-copier/internal/domain/value_objects"
 )
 
@@ -17,3 +18,6 @@ func (s *ImageIDService) BuildDestImageID(sourceID, registryHost, registryNamesp
 func (s *ImageIDService) NormalizeSourceID(imageID string) string {
 	return value_objects.ParseImageID(imageID).Normalize()
 }
+
+// Ensure ImageIDService implements the output.ImageIDService interface
+var _ output.ImageIDService = (*ImageIDService)(nil)

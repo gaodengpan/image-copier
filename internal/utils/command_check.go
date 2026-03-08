@@ -3,27 +3,22 @@ package utils
 import (
 	"fmt"
 	"os/exec"
-	"strings"
 )
 
-// CheckCommandExists verifies if a command is available in the system PATH
+// CheckCommandExists verifies if a command is available in the system PATH.
+// It uses exec.LookPath which safely searches for the executable without
+// invoking a shell, preventing command injection vulnerabilities.
 func CheckCommandExists(command string) (bool, error) {
-	// Use 'command -v' to check if the command exists in PATH
-	cmd := exec.Command("sh", "-c", "command -v "+command)
-	output, err := cmd.Output()
-
+	// Use exec.LookPath to safely find the command in PATH
+	// This avoids shell injection by not using shell interpretation
+	path, err := exec.LookPath(command)
 	if err != nil {
-		// Command not found
+		// Command not found in PATH
 		return false, nil
 	}
 
-	// Trim whitespace and check if we got a valid path
-	commandPath := strings.TrimSpace(string(output))
-	if commandPath == "" {
-		return false, nil
-	}
-
-	return true, nil
+	// If we got a non-empty path, the command exists
+	return path != "", nil
 }
 
 // CheckCommandsExist verifies multiple commands exist in the system PATH

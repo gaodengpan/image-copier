@@ -83,3 +83,67 @@ func TestGetMissingCommands(t *testing.T) {
 		})
 	}
 }
+
+// TestCheckCommandExists_Security tests that malicious command inputs
+// do not result in command injection. These inputs should be treated
+// as literal command names to search for in PATH.
+func TestCheckCommandExists_Security(t *testing.T) {
+	// These malicious inputs should NOT execute any commands
+	// They should simply be treated as non-existent command names
+	maliciousInputs := []struct {
+		name    string
+		command string
+		desc    string
+	}{
+		{
+			name:    "semicolon injection",
+			command: "ls; rm -rf /",
+			desc:    "semicolons should not chain commands",
+		},
+		{
+			name:    "double ampersand injection",
+			command: "ls && echo pwned",
+			desc:    "&& should not chain commands",
+		},
+		{
+			name:    "pipe injection",
+			command: "ls | cat",
+			desc:    "pipes should not work",
+		},
+		{
+			name:    "backtick injection",
+			command: "ls`whoami`",
+			desc:    "backticks should not execute commands",
+		},
+		{
+			name:    "dollar substitution",
+			command: "ls$(whoami)",
+			desc:    "dollar substitution should not execute",
+		},
+		{
+			name:    "newline injection",
+			command: "ls\necho pwned",
+			desc:    "newlines should not split commands",
+		},
+		{
+			name:    "redirect injection",
+			command: "ls > /tmp/pwned",
+			desc:    "redirects should not create files",
+		},
+	}
+
+	for _, tt := range maliciousInputs {
+		t.Run(tt.name, func(t *testing.T) {
+			// The function should safely handle malicious input
+			// It should return false (command not found) without error
+			// Most importantly, it should NOT execute any injected commands
+			got, err := CheckCommandExists(tt.command)
+
+			// Should not return an error
+			assert.NoError(t, err, "CheckCommandExists should not error on malicious input: %s", tt.desc)
+
+			// Should return false since these are not valid command names in PATH
+			assert.False(t, got, "Malicious input should be treated as non-existent command: %s", tt.desc)
+		})
+	}
+}

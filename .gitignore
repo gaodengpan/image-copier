@@ -24,6 +24,8 @@ Thumbs.db
 .tdd-cycle
 
 openspec
-docs
 .specify/contexts
-.specify/scripts
+.specify/scripts.specify/.current-feature
+.specify/specs
+**/.progress.md
+**/.speckit-state.json

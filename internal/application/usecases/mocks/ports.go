@@ -4,7 +4,9 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/gaodengpan/image-copier/internal/domain/entities"
 	"github.com/gaodengpan/image-copier/internal/domain/ports/output"
+	"github.com/gaodengpan/image-copier/internal/domain/value_objects"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -37,3 +39,104 @@ func (m *MockHTTPClient) Do(req *http.Request) (*http.Response, error) {
 }
 
 var _ output.HTTPClient = (*MockHTTPClient)(nil)
+
+// MockSyncConfig implements output.SyncConfig for testing
+type MockSyncConfig struct {
+	mock.Mock
+}
+
+func (m *MockSyncConfig) StagingRegistryHost() string {
+	return m.Called().String(0)
+}
+
+func (m *MockSyncConfig) StagingRegistryNamespace() string {
+	return m.Called().String(0)
+}
+
+func (m *MockSyncConfig) StagingRegistryUsername() string {
+	return m.Called().String(0)
+}
+
+func (m *MockSyncConfig) StagingRegistryPassword() string {
+	return m.Called().String(0)
+}
+
+func (m *MockSyncConfig) DefaultArch() string {
+	return m.Called().String(0)
+}
+
+func (m *MockSyncConfig) DefaultOS() string {
+	return m.Called().String(0)
+}
+
+func (m *MockSyncConfig) GetDistributionTargets(targets []string) []string {
+	args := m.Called(targets)
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).([]string)
+}
+
+func (m *MockSyncConfig) GetPrivateRegistry(name string) *output.PrivateRegistryConfig {
+	args := m.Called(name)
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*output.PrivateRegistryConfig)
+}
+
+var _ output.SyncConfig = (*MockSyncConfig)(nil)
+
+// MockDistributionTargetBuilder implements output.DistributionTargetBuilder for testing
+type MockDistributionTargetBuilder struct {
+	mock.Mock
+}
+
+func (m *MockDistributionTargetBuilder) BuildTargets(targetNames []string) []*value_objects.DistributionTarget {
+	args := m.Called(targetNames)
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).([]*value_objects.DistributionTarget)
+}
+
+var _ output.DistributionTargetBuilder = (*MockDistributionTargetBuilder)(nil)
+
+// MockMultiTargetDistributor implements output.MultiTargetDistributor for testing
+type MockMultiTargetDistributor struct {
+	mock.Mock
+}
+
+func (m *MockMultiTargetDistributor) DistributeToAll(
+	ctx context.Context,
+	task *entities.DistributeTask,
+	targets []*value_objects.DistributionTarget,
+	stagingConfig output.StagingRegistryConfig,
+	force bool,
+) output.DistributeResult {
+	args := m.Called(ctx, task, targets, stagingConfig, force)
+	return args.Get(0).(output.DistributeResult)
+}
+
+var _ output.MultiTargetDistributor = (*MockMultiTargetDistributor)(nil)
+
+// MockDistributionStrategy implements output.DistributionStrategy for testing
+type MockDistributionStrategy struct {
+	mock.Mock
+}
+
+func (m *MockDistributionStrategy) Distribute(ctx context.Context, opts output.DistributionOptions) error {
+	args := m.Called(ctx, opts)
+	return args.Error(0)
+}
+
+func (m *MockDistributionStrategy) ExistsInDistributionTarget(ctx context.Context, opts output.DistributionOptions) (bool, error) {
+	args := m.Called(ctx, opts)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockDistributionStrategy) TargetType() value_objects.TargetType {
+	return m.Called().Get(0).(value_objects.TargetType)
+}
+
+var _ output.DistributionStrategy = (*MockDistributionStrategy)(nil)

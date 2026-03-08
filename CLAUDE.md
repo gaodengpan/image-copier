@@ -1,10 +1,20 @@
 # CLAUDE.md
 
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## 项目概述
+
+image-copier 是一个通过 GitHub Actions 中转拉取海外 Docker 镜像到国内 Registry 的 CLI 工具。
+
+核心流程：`用户 → GitHub Actions (海外) → 国内 Registry → 本地 Docker`
+
 ## 基本命令
+
 ```bash
 make build              # 构建
-make test               # 测试
+make test               # 测试（全部）
 make test-coverage      # 测试 + 覆盖率
+go test -v ./path/to/pkg -run TestName   # 单个测试
 make fmt                # 格式化
 make vet                # go vet
 make check-quality      # 全量检查
@@ -12,52 +22,90 @@ make check-quality      # 全量检查
 
 ## 架构原则
 
-### 依赖规则
-- UseCase 仅依赖领域层接口，禁止直接依赖基础设施（如 `DockerClient`, `RegistryClient`）
-- 基础设施层通过 `domain/ports/output` 接口注入
+### 分层架构（Clean + Hexagonal）
 
-### 领域建模
-- 实体需包含丰富业务行为，避免贫血模型
-- 优先使用值对象（`Architecture`, `OperatingSystem`）替代 string 字段
-- 领域事件驱动状态变更，UseCase 监听事件而非直接操作
+```
+cmd/                          # 入口点
+internal/
+├── adapters/                 # 适配层
+│   ├── primary/cli/          # 输入适配器（CLI → UseCase）
+│   └── secondary/gateways/   # 输出适配器（实现 output ports）
+├── application/usecases/     # 应用层（编排业务流程）
+├── domain/                   # 领域层（核心业务逻辑）
+│   ├── entities/             # 实体：有行为的数据模型
+│   ├── value_objects/        # 值对象：不可变概念
+│   ├── ports/                # 端口：抽象接口
+│   │   ├── input/            #   UseCase 接口定义
+│   │   └── output/           #   基础设施接口
+│   ├── services/             # 领域服务：跨实体逻辑
+│   └── validators/           # 验证器
+├── infrastructure/           # 基础设施（配置、加密）
+└── shared/errors/            # 共享错误类型
+pkg/                          # 可复用公共包
+```
 
-### 职责边界
-- UseCase: 业务编排，单一职责（避免 300 行 + 函数）
-- CLI 层：仅负责输入解析、结果展示，不包含业务逻辑
-- 服务层：仅当需要跨聚合操作时才定义领域服务
+### 核心原则
+
+| 原则 | 规则 | 示例 |
+|------|------|------|
+| **依赖倒置** | UseCase → `output` 接口，禁止直接依赖实现 | `sync_images.go` 仅依赖 `output.DockerClient` |
+| **单一职责** | 每层只做一件事 | CLI 解析参数，UseCase 编排流程，Gateway 调外部服务 |
+| **接口隔离** | 端口接口小而专注 | `DockerClient` 仅 3 个方法 |
+| **实体行为** | 实体包含业务方法 | `SyncTask.Start()`, `SyncTask.Complete()` |
+
+### 依赖流向
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    CLI (primary)                    │
+│                        ↓                            │
+│                   UseCase                           │
+│                    ↓   ↘                            │
+│              Domain Layer    ←── Ports (output)     │
+│           (entities, services)        ↑             │
+│                                      Gateways       │
+│                                   (secondary)       │
+└─────────────────────────────────────────────────────┘
+```
+
+**关键规则**：
+- 外层可依赖内层，内层禁止依赖外层
+- UseCase 通过 `ports/output` 接口与外部交互
+- 所有具体实现通过 `AdapterFactory` 创建
+
+### 层职责速查
+
+| 层 | 职责 | 禁止 |
+|---|------|------|
+| CLI | 参数解析、调用 UseCase、输出格式化 | 业务逻辑、直接调用 Gateway |
+| UseCase | 编排流程、业务规则校验 | 直接操作外部服务 |
+| Domain | 核心业务、实体行为、领域规则 | 依赖框架、I/O 操作 |
+| Gateway | 封装外部服务调用 | 业务逻辑 |
 
 ## 开发规范
 
-### TDD 流程
-1. 编写失败测试（Red）
-2. 最小实现通过测试（Green）
-3. 重构优化（Refactor）
+### 领域建模
+- 实体包含业务行为（如 `SyncTask.Start()`, `SyncTask.Complete()`）
+- 值对象封装概念（`Architecture`, `OperatingSystem`）
 
-### 代码组织
-- 结构体字段：关键配置 → 依赖 → 状态 → 辅助
-- 方法顺序：构造函数 → 公共方法 → 私有方法
-- 构造函数参数超过 5 个时，使用参数对象模式
+### 错误分类
+- `AdapterError` - 基础设施层错误（Docker/Registry/GitHub）
+- `ValidationError` - 配置验证错误
+- `DomainError` - 领域层错误
 
-### 错误处理
-- 分类：`DomainError`, `ValidationError`, `AdapterError`
-- 包装：`fmt.Errorf("context: %w", err)`
-- 忽略：显式使用 `_`
-
-### 测试规范
+### 测试
 - 文件：`<name>_test.go`
 - 断言：`testify/assert` + `testify/require`
-- Mock：基础设施依赖必须可模拟
-
-### 命名约定
-- 包名：小写（`value_objects`, `log_format`）
-- 类型：PascalCase（`ImageProgress`, `SyncTask`）
-- 接口：-er/-or 结尾（`ConfigProvider`）
-- 错误：`Error`/`Err` 结尾
+- Mock：位于 `internal/application/usecases/mocks/`
 
 ### Git 提交
-- 语气：祈使句（"Add feature"）
 - 格式：conventional commits（`feat:`, `fix:`, `docs:`）
+- 语气：祈使句
 
-## 其他
+## 技术栈
+
 - Go >= 1.24.0
-- `CGO_ENABLED=0` 静态编译
+- CLI: cobra + viper
+- 日志: logrus
+- 进度条: mpb
+- 静态编译: `CGO_ENABLED=0`

@@ -135,12 +135,95 @@
 - 确保测试具有确定性，不包含随机性或依赖外部状态
 - 测试命名应清晰表达预期行为和测试场景
 
+## 8. 架构原则
+
+### 8.1 分层架构规范
+**原则**: 项目采用 Clean Architecture + Hexagonal Architecture（整洁架构 + 六边形架构），确保业务逻辑与基础设施解耦。
+
+目录结构规范：
+```
+cmd/                          # 入口点
+internal/
+├── adapters/                 # 适配层
+│   ├── primary/cli/          # 输入适配器（CLI → UseCase）
+│   └── secondary/gateways/   # 输出适配器（实现 output ports）
+├── application/usecases/     # 应用层（编排业务流程）
+├── domain/                   # 领域层（核心业务逻辑）
+│   ├── entities/             # 实体：有行为的数据模型
+│   ├── value_objects/        # 值对象：不可变概念
+│   ├── ports/                # 端口：抽象接口
+│   │   ├── input/            #   UseCase 接口定义
+│   │   └── output/           #   基础设施接口
+│   ├── services/             # 领域服务：跨实体逻辑
+│   └── validators/           # 验证器
+├── infrastructure/           # 基础设施（配置、加密）
+└── shared/errors/            # 共享错误类型
+pkg/                          # 可复用公共包
+```
+
+核心原则速查：
+
+| 原则 | 规则 | 示例 |
+|------|------|------|
+| **依赖倒置** | UseCase → `output` 接口，禁止直接依赖实现 | `sync_images.go` 仅依赖 `output.DockerClient` |
+| **单一职责** | 每层只做一件事 | CLI 解析参数，UseCase 编排流程，Gateway 调外部服务 |
+| **接口隔离** | 端口接口小而专注 | `DockerClient` 仅 3 个方法 |
+| **实体行为** | 实体包含业务方法 | `SyncTask.Start()`, `SyncTask.Complete()` |
+
+### 8.2 依赖流向规则
+**原则**: 依赖必须由外向内流动，内层禁止依赖外层。
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    CLI (primary)                    │
+│                        ↓                            │
+│                   UseCase                           │
+│                    ↓   ↘                            │
+│              Domain Layer    ←── Ports (output)     │
+│           (entities, services)        ↑             │
+│                                      Gateways       │
+│                                   (secondary)       │
+└─────────────────────────────────────────────────────┘
+```
+
+关键规则：
+- 外层可依赖内层，内层禁止依赖外层
+- UseCase 通过 `ports/output` 接口与外部交互
+- 所有具体实现通过 `AdapterFactory` 创建
+
+### 8.3 层职责速查
+
+| 层 | 职责 | 禁止 |
+|---|------|------|
+| CLI | 参数解析、调用 UseCase、输出格式化 | 业务逻辑、直接调用 Gateway |
+| UseCase | 编排流程、业务规则校验 | 直接操作外部服务 |
+| Domain | 核心业务、实体行为、领域规则 | 依赖框架、I/O 操作 |
+| Gateway | 封装外部服务调用 | 业务逻辑 |
+
+### 8.4 设计模式指导
+**原则**: 遵循既定的设计模式以确保架构一致性。
+
+**工厂模式**: 所有适配器实例通过 `AdapterFactory` 创建，返回接口类型
+```go
+func (f *AdapterFactory) CreateDockerClient() output.DockerClient {
+    return gateways.NewExecDockerAdapter()
+}
+```
+
+**策略模式**: 支持多种实现时定义策略接口（如 `SyncTargetStrategy`）
+
+**接口验证**: Gateway 实现接口时使用编译期验证
+```go
+var _ output.DockerClient = (*ExecDockerAdapter)(nil)
+```
+
 ## 治理与修订
 
 ### 版本管理
 - 初始版本：v1.0.0
 - 日期：2026-02-14
 - TDD规范添加：v1.0.1
+- 架构原则添加：v1.1.0
 
 ### 修订流程
 - 任何对本 Constitution 的修改都需要通过核心维护者一致同意
