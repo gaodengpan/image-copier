@@ -204,7 +204,7 @@ func (uc *SyncCommandUseCaseImpl) syncToStaging(ctx context.Context, tasks []*en
 			if err := uc.syncSingleImageToStaging(ctx, t); err != nil {
 				mu.Lock()
 				// Remove from NewlySynced and add to Failed
-				result.NewlySynced = removeTask(result.NewlySynced, t)
+				result.NewlySynced = removeTask(result.NewlySynced, t.Source)
 				result.Failed = append(result.Failed, t)
 				result.Errors = append(result.Errors, fmt.Errorf("failed to sync %s: %w", t.Source, err))
 				mu.Unlock()
@@ -216,10 +216,10 @@ func (uc *SyncCommandUseCaseImpl) syncToStaging(ctx context.Context, tasks []*en
 	wg.Wait()
 }
 
-// removeTask removes a task from a slice
-func removeTask(tasks []*entities.SyncTask, target *entities.SyncTask) []*entities.SyncTask {
+// removeTask removes a task from a slice by source identifier
+func removeTask(tasks []*entities.SyncTask, source string) []*entities.SyncTask {
 	for i, t := range tasks {
-		if t == target {
+		if t.Source == source {
 			return append(tasks[:i], tasks[i+1:]...)
 		}
 	}

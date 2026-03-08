@@ -16,7 +16,7 @@
 - **Commit**: `refactor(domain): integrate or remove DistributeTask state methods`
 
 ### 1.2 Fix potential race condition in removeTask
-- **Do**:
+- [x] Done
   1. Read `internal/application/usecases/sync_command_usecase.go:207-210`
   2. Change `removeTask` function to use `Source` field comparison instead of pointer
   3. Update function signature: `removeTask(tasks []*entities.SyncTask, source string) []*entities.SyncTask`
