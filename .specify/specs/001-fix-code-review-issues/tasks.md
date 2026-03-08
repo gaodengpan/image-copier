@@ -3,6 +3,7 @@
 ## Phase 1: Fix Code Review Issues
 
 ### 1.1 Fix DistributeTask unused state methods
+- [x] Done
 - **Do**:
   1. Read `internal/domain/entities/distribute_task.go`
   2. Read `internal/application/usecases/sync_command_usecase.go`
