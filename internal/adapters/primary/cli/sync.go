@@ -178,6 +178,11 @@ func executeSyncCommand(
 	outputFormat string,
 	verbose bool,
 ) error {
+	// Set log level based on verbose flag
+	if verbose {
+		logger.SetLevel(logrus.DebugLevel)
+	}
+
 	if len(images) == 0 {
 		fmt.Println("No images to sync.")
 		return nil

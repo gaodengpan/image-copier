@@ -29,8 +29,12 @@ func (p *SyncCLIPresenter) PresentSyncPhaseResult(result *input.SyncPhaseResult)
 	fmt.Printf("Newly synced:    %d\n", len(result.NewlySynced))
 	if len(result.Failed) > 0 {
 		fmt.Printf("Failed:          %d\n", len(result.Failed))
-		for _, task := range result.Failed {
-			fmt.Printf("  - %s: FAILED\n", task.DisplayName())
+		for i, task := range result.Failed {
+			if i < len(result.Errors) {
+				fmt.Printf("  - %s: %v\n", task.DisplayName(), result.Errors[i])
+			} else {
+				fmt.Printf("  - %s: FAILED\n", task.DisplayName())
+			}
 		}
 	}
 	fmt.Println()

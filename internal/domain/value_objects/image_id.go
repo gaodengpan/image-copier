@@ -45,7 +45,18 @@ func (id *ImageID) Raw() string {
 }
 
 func (id *ImageID) Registry() string {
-	return ""
+	// Extract registry from the raw image ID
+	// Format: [registry/]repo[:tag][@digest]
+	parts := strings.SplitN(id.raw, "/", 2)
+	if len(parts) == 2 {
+		// Check if first part looks like a registry (contains . or : or is localhost)
+		first := parts[0]
+		if strings.Contains(first, ".") || strings.Contains(first, ":") || first == "localhost" {
+			return first
+		}
+	}
+	// Default registry for Docker Hub images
+	return "docker.io"
 }
 
 func (id *ImageID) Repository() string {

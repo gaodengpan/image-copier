@@ -3,6 +3,7 @@ package use_cases
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"testing"
 
@@ -50,6 +51,11 @@ func (m *mockDockerClient) LoadImage(ctx context.Context, tarPath string) error 
 	return args.Error(0)
 }
 
+func (m *mockDockerClient) LoadImageFromReader(ctx context.Context, reader io.Reader) error {
+	args := m.Called(ctx, reader)
+	return args.Error(0)
+}
+
 type mockRegistryClient struct {
 	mock.Mock
 }
@@ -61,6 +67,11 @@ func (m *mockRegistryClient) ImageExists(ctx context.Context, imageID, username,
 
 func (m *mockRegistryClient) SaveImageToFile(ctx context.Context, imageID, imageTag, outputPath, username, password string) error {
 	args := m.Called(ctx, imageID, imageTag, outputPath, username, password)
+	return args.Error(0)
+}
+
+func (m *mockRegistryClient) SaveImageToWriter(ctx context.Context, imageID, imageTag string, writer io.Writer, username, password string) error {
+	args := m.Called(ctx, imageID, imageTag, writer, username, password)
 	return args.Error(0)
 }
 

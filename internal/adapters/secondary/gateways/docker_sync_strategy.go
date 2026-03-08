@@ -33,9 +33,11 @@ func (s *DockerSyncStrategy) SyncFromRegistry(ctx context.Context, opts output.S
 		opts.SourceRegistryNS,
 	)
 
+	// For cross-VM scenarios (like lima), we still need to use a temp file
+	// because io.Pipe only works within the same process
 	tmpPath, err := s.fileSystem.CreateTempFile("image-copier-*.tar")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create temp file: %w", err)
 	}
 
 	cleanup := func() {

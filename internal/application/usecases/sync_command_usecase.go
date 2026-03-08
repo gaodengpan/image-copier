@@ -171,7 +171,16 @@ func (uc *SyncCommandUseCaseImpl) diffStagingRegistry(ctx context.Context, tasks
 			sourceID := uc.imageIDService.NormalizeSourceID(task.Source)
 			destID := uc.registryClient.BuildDestImageID(sourceID, uc.syncConfig.StagingRegistryHost(), uc.syncConfig.StagingRegistryNamespace())
 
+			uc.logger.Debugf("Checking image existence: %s -> %s", sourceID, destID)
 			exists, err := uc.registryClient.CheckImageExists(ctx, destID, uc.syncConfig.StagingRegistryUsername(), uc.syncConfig.StagingRegistryPassword())
+			if err != nil {
+				uc.logger.Warn("Failed to check image existence for ", destID, ": ", err)
+			}
+			if exists {
+				uc.logger.Debugf("Image exists in staging registry: %s", destID)
+			} else {
+				uc.logger.Debugf("Image does not exist in staging registry: %s", destID)
+			}
 
 			results[idx] = diffResult{
 				Task:         task,
@@ -205,6 +214,7 @@ func (uc *SyncCommandUseCaseImpl) syncToStaging(ctx context.Context, tasks []*en
 				mu.Lock()
 				// Remove from NewlySynced and add to Failed
 				result.NewlySynced = removeTask(result.NewlySynced, t.Source)
+				t.Fail(err) // Set error on task
 				result.Failed = append(result.Failed, t)
 				result.Errors = append(result.Errors, fmt.Errorf("failed to sync %s: %w", t.Source, err))
 				mu.Unlock()
@@ -244,7 +254,7 @@ func (uc *SyncCommandUseCaseImpl) syncSingleImageToStaging(ctx context.Context, 
 
 	// Trigger GitHub Actions workflow
 	// Note: diffStagingRegistry already checked existence, so we proceed directly
-	uc.logger.Infof("Triggering GitHub Actions for %s", sourceID)
+	uc.logger.Infof("Triggering GitHub Actions for %s -> %s", sourceID, destID)
 	runID, err := uc.githubClient.TriggerWorkflowWithRetry(ctx, sourceID, destID, arch, osType)
 	if err != nil {
 		return fmt.Errorf("failed to trigger workflow: %w", err)
@@ -269,10 +279,12 @@ func (uc *SyncCommandUseCaseImpl) buildDistributeTasks(syncResult *input.SyncPha
 
 	tasks := make([]*entities.DistributeTask, len(allImages))
 	for i, syncTask := range allImages {
+		// Use normalized source ID as SourceImageID - the distribution strategies
+		// will build the full staging registry path using BuildDestImageID
 		sourceID := uc.imageIDService.NormalizeSourceID(syncTask.Source)
-		destID := uc.registryClient.BuildDestImageID(sourceID, uc.syncConfig.StagingRegistryHost(), uc.syncConfig.StagingRegistryNamespace())
 
-		tasks[i] = entities.NewDistributeTask(destID, syncTask.Source, syncTask.Arch, syncTask.Os, in.Targets)
+		uc.logger.Debugf("Building distribute task: %s -> %s", syncTask.Source, sourceID)
+		tasks[i] = entities.NewDistributeTask(sourceID, syncTask.Source, syncTask.Arch, syncTask.Os, in.Targets)
 	}
 	return tasks
 }
