@@ -25,17 +25,6 @@ func (p *SyncCLIPresenter) PresentSyncStart(count int) {
 	fmt.Printf("Starting sync for %d image(s)...\n\n", count)
 }
 
-// PresentDiffSummary presents the diff result summary
-func (p *SyncCLIPresenter) PresentDiffSummary(alreadySynced, toSync int) {
-	fmt.Printf("Checking images against staging registry...\n")
-	fmt.Printf("  ✓ %d already synced\n", alreadySynced)
-	if toSync > 0 {
-		fmt.Printf("  → %d to sync\n\n", toSync)
-	} else {
-		fmt.Println()
-	}
-}
-
 // PresentProgress returns the progress manager for real-time updates
 func (p *SyncCLIPresenter) PresentProgress(total int, workerCount int) *progress.Progress {
 	p.progress = progress.NewProgress(total, workerCount, false, "syncing")
@@ -126,11 +115,6 @@ type jsonSummary struct {
 // PresentSyncStart presents the start of sync operation (no-op for JSON)
 func (p *SyncJSONPresenter) PresentSyncStart(count int) {
 	// No output during start for JSON mode
-}
-
-// PresentDiffSummary is no-op for JSON output
-func (p *SyncJSONPresenter) PresentDiffSummary(alreadySynced, toSync int) {
-	// No output for JSON mode
 }
 
 // PresentProgress returns nil for JSON mode (no progress bar)

@@ -91,6 +91,25 @@ image-copier sync -f images.yaml -o json
 | `--arch` | 指定架构（如 arm64） |
 | `-o, --output` | 输出格式：text 或 json |
 | `--timeout` | 批量同步超时时间（如 5m, 1h），默认不超时 |
+| `--target` | 分发目标（可多次指定，如 `--target docker --target my-registry`） |
+| `--skip-sync` | 跳过同步阶段（仅分发） |
+| `--skip-distribute` | 跳过分发阶段（仅同步） |
+
+## 从 pull 命令迁移
+
+`pull` 命令已被移除，请使用功能更完整的 `sync` 命令：
+
+| pull 命令 | sync 等效命令 |
+|-----------|--------------|
+| `pull nginx:latest` | `sync nginx:latest` |
+| `pull -f images.yaml` | `sync -f images.yaml` |
+| `pull --target docker` | `sync`（默认分发到 Docker） |
+| `pull --target registry --registry myreg` | `sync --target myreg` |
+
+**sync 命令优势：**
+- 两阶段同步：先同步到中转 Registry，再分发到多个目标
+- 多目标分发：`--target` 可多次指定
+- 灵活控制：`--skip-sync`、`--skip-distribute` 可单独执行某阶段
 
 ## 输出说明
 

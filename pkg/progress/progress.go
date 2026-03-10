@@ -121,7 +121,7 @@ func isTerminal() bool {
 // operation is the action name shown in the progress bar (e.g., "pulling", "syncing").
 func NewProgress(total int, workerCount int, noOutput bool, operation string) *Progress {
 	if operation == "" {
-		operation = "pulling"
+		operation = "syncing"
 	}
 	// Disable progress bar if not a terminal (to avoid repeated line output)
 	if !noOutput && !isTerminal() {

@@ -23,10 +23,6 @@ type syncTask struct {
 	Os     string
 }
 
-func (t syncTask) displayName() string {
-	return fmt.Sprintf("%s (%s/%s)", t.Source, t.Os, t.Arch)
-}
-
 func readSyncManifest(path, defaultArch, defaultOs string) ([]syncTask, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

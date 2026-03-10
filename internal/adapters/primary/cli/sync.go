@@ -333,7 +333,6 @@ func executeSyncCommand(
 // SyncPresenter defines the interface for presenting sync results
 type SyncPresenter interface {
 	PresentSyncStart(count int)
-	PresentDiffSummary(alreadySynced, toSync int)
 	PresentProgress(total int, workerCount int) *progress.Progress
 	PresentSyncPhaseResult(result *input.SyncPhaseResult)
 	PresentDistributePhaseResult(result *input.DistributePhaseResult)
