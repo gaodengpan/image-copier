@@ -9,6 +9,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/vbauerster/mpb/v8 v8.11.3
 	go.yaml.in/yaml/v3 v3.0.4
+	golang.org/x/term v0.20.0
 )
 
 require (

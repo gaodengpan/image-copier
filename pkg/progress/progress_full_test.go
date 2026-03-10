@@ -30,7 +30,7 @@ func TestImageStatusString(t *testing.T) {
 }
 
 func TestNewProgress_NoOutput(t *testing.T) {
-	p := NewProgress(5, 3, true)
+	p := NewProgress(5, 3, true, "pulling")
 	assert.NotNil(t, p)
 	assert.Equal(t, 5, p.total)
 	assert.True(t, p.noOutput)
@@ -38,13 +38,13 @@ func TestNewProgress_NoOutput(t *testing.T) {
 }
 
 func TestNewProgress_ZeroTotal(t *testing.T) {
-	p := NewProgress(0, 3, false)
+	p := NewProgress(0, 3, false, "pulling")
 	assert.NotNil(t, p)
 	assert.Equal(t, 0, p.total)
 }
 
 func TestProgress_AddImage(t *testing.T) {
-	p := NewProgress(3, 2, true)
+	p := NewProgress(3, 2, true, "pulling")
 
 	p.AddImage(0, "nginx:latest")
 	p.AddImage(1, "redis:alpine")
@@ -57,7 +57,7 @@ func TestProgress_AddImage(t *testing.T) {
 }
 
 func TestProgress_AddImage_OutOfBounds(t *testing.T) {
-	p := NewProgress(2, 2, true)
+	p := NewProgress(2, 2, true, "pulling")
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -69,7 +69,7 @@ func TestProgress_AddImage_OutOfBounds(t *testing.T) {
 }
 
 func TestProgress_UpdateStatus(t *testing.T) {
-	p := NewProgress(3, 2, true)
+	p := NewProgress(3, 2, true, "pulling")
 
 	p.AddImage(0, "nginx:latest")
 	p.UpdateStatus(0, StatusCompleted, nil)
@@ -84,7 +84,7 @@ func TestProgress_UpdateStatus(t *testing.T) {
 }
 
 func TestProgress_UpdateStatus_OutOfBounds(t *testing.T) {
-	p := NewProgress(2, 2, true)
+	p := NewProgress(2, 2, true, "pulling")
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -96,7 +96,7 @@ func TestProgress_UpdateStatus_OutOfBounds(t *testing.T) {
 }
 
 func TestProgress_UpdateStatus_NilImage(t *testing.T) {
-	p := NewProgress(2, 2, true)
+	p := NewProgress(2, 2, true, "pulling")
 
 	p.UpdateStatus(0, StatusCompleted, nil)
 
@@ -106,7 +106,7 @@ func TestProgress_UpdateStatus_NilImage(t *testing.T) {
 }
 
 func TestProgress_SetDuration(t *testing.T) {
-	p := NewProgress(3, 2, true)
+	p := NewProgress(3, 2, true, "pulling")
 
 	p.AddImage(0, "nginx:latest")
 	p.SetDuration(0, 5*time.Second)
@@ -116,7 +116,7 @@ func TestProgress_SetDuration(t *testing.T) {
 }
 
 func TestProgress_SetDuration_OutOfBounds(t *testing.T) {
-	p := NewProgress(2, 2, true)
+	p := NewProgress(2, 2, true, "pulling")
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -128,7 +128,7 @@ func TestProgress_SetDuration_OutOfBounds(t *testing.T) {
 }
 
 func TestProgress_UpdateWorker_NoOutput(t *testing.T) {
-	p := NewProgress(3, 2, true)
+	p := NewProgress(3, 2, true, "pulling")
 
 	p.UpdateWorker(0, "nginx:latest")
 
@@ -137,7 +137,7 @@ func TestProgress_UpdateWorker_NoOutput(t *testing.T) {
 }
 
 func TestProgress_UpdateStage_NoOutput(t *testing.T) {
-	p := NewProgress(3, 2, true)
+	p := NewProgress(3, 2, true, "pulling")
 
 	info := StageInfo{
 		Label:     "nginx:latest",
@@ -149,7 +149,7 @@ func TestProgress_UpdateStage_NoOutput(t *testing.T) {
 }
 
 func TestProgress_GetImages(t *testing.T) {
-	p := NewProgress(3, 2, true)
+	p := NewProgress(3, 2, true, "pulling")
 
 	p.AddImage(0, "nginx:latest")
 	p.AddImage(1, "redis:alpine")
@@ -161,27 +161,27 @@ func TestProgress_GetImages(t *testing.T) {
 }
 
 func TestProgress_Increment(t *testing.T) {
-	p := NewProgress(3, 2, true)
+	p := NewProgress(3, 2, true, "pulling")
 	p.Increment()
 }
 
 func TestProgress_SetInitialProgress(t *testing.T) {
-	p := NewProgress(3, 2, true)
+	p := NewProgress(3, 2, true, "pulling")
 	p.SetInitialProgress(2)
 }
 
 func TestProgress_CompleteSkipped(t *testing.T) {
-	p := NewProgress(3, 2, true)
+	p := NewProgress(3, 2, true, "pulling")
 	p.CompleteSkipped(1)
 }
 
 func TestProgress_AbortWorkers(t *testing.T) {
-	p := NewProgress(3, 2, true)
+	p := NewProgress(3, 2, true, "pulling")
 	p.AbortWorkers()
 }
 
 func TestProgress_WaitContainer(t *testing.T) {
-	p := NewProgress(3, 2, true)
+	p := NewProgress(3, 2, true, "pulling")
 	p.WaitContainer()
 }
 
@@ -259,18 +259,18 @@ func TestFormatDuration(t *testing.T) {
 }
 
 func TestLogWriter(t *testing.T) {
-	p := NewProgress(3, 2, true)
+	p := NewProgress(3, 2, true, "pulling")
 	writer := p.LogWriter()
 	assert.NotNil(t, writer)
 }
 
 func TestProgress_UpdateWorker_IndexOutOfBounds(t *testing.T) {
-	p := NewProgress(3, 2, false)
+	p := NewProgress(3, 2, false, "pulling")
 	p.UpdateWorker(10, "nginx:latest")
 }
 
 func TestProgress_UpdateStage_IndexOutOfBounds(t *testing.T) {
-	p := NewProgress(3, 2, false)
+	p := NewProgress(3, 2, false, "pulling")
 	info := StageInfo{
 		Label:     "nginx:latest",
 		StageName: "pulling",
@@ -278,4 +278,67 @@ func TestProgress_UpdateStage_IndexOutOfBounds(t *testing.T) {
 		StartAt:   time.Now(),
 	}
 	p.UpdateStage(10, info)
+}
+
+func TestSyncStage_String(t *testing.T) {
+	tests := []struct {
+		stage    SyncStage
+		expected string
+	}{
+		{SyncStageChecking, "checking"},
+		{SyncStageSyncing, "sync"},
+		{SyncStageDistributing, "dist"},
+		{SyncStage(100), "unknown"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.expected, func(t *testing.T) {
+			assert.Equal(t, tt.expected, tt.stage.String())
+		})
+	}
+}
+
+func TestFormatStageWithTarget(t *testing.T) {
+	tests := []struct {
+		name       string
+		stage      SyncStage
+		targetName string
+		expected   string
+	}{
+		{"checking stage", SyncStageChecking, "", "checking"},
+		{"syncing stage", SyncStageSyncing, "", "sync"},
+		{"dist stage with target", SyncStageDistributing, "docker", "dist → docker"},
+		{"dist stage with empty target", SyncStageDistributing, "", "dist"},
+		{"dist stage with registry target", SyncStageDistributing, "my-registry", "dist → my-registry"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := FormatStageWithTarget(tt.stage, tt.targetName)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestProgress_UpdateSyncStage(t *testing.T) {
+	p := NewProgress(3, 2, true, "syncing")
+
+	p.UpdateSyncStage(0, "nginx:latest", SyncStageChecking, "", 0)
+	p.UpdateSyncStage(1, "redis:alpine", SyncStageSyncing, "", 50)
+	p.UpdateSyncStage(2, "busybox:latest", SyncStageDistributing, "docker", 80)
+}
+
+func TestProgress_UpdateSyncStage_NoOutput(t *testing.T) {
+	p := NewProgress(3, 2, true, "syncing")
+
+	// Should not panic with out of bounds index
+	p.UpdateSyncStage(10, "nginx:latest", SyncStageChecking, "", 0)
+}
+
+func TestProgress_ClearWorker(t *testing.T) {
+	p := NewProgress(3, 2, true, "syncing")
+
+	p.ClearWorker(0)
+	// Out of bounds should not panic
+	p.ClearWorker(10)
 }

@@ -5,7 +5,20 @@ import (
 	"time"
 
 	"github.com/gaodengpan/image-copier/internal/domain/entities"
+	"github.com/gaodengpan/image-copier/pkg/progress"
 )
+
+// SyncStageCallback 是进度回调函数类型
+// imageID: 镜像标识
+// stage: 当前阶段
+// targetName: 分发目标名称（仅在 dist 阶段使用）
+// percent: 阶段内进度百分比 [0, 100]
+type SyncStageCallback func(imageID string, stage progress.SyncStage, targetName string, percent float64)
+
+// TaskCompleteCallback 是任务完成回调函数类型
+// imageID: 镜像标识
+// err: 错误信息（nil 表示成功）
+type TaskCompleteCallback func(imageID string, err error)
 
 // SyncCommandInput represents the input for the sync command
 type SyncCommandInput struct {
@@ -27,6 +40,10 @@ type SyncCommandInput struct {
 	Targets        []string // Target names (empty = use default from config)
 	SkipSync       bool     // Skip sync phase (only distribute)
 	SkipDistribute bool     // Skip distribute phase (only sync)
+
+	// Progress callback for real-time updates
+	ProgressCallback  SyncStageCallback
+	TaskComplete      TaskCompleteCallback // Called when each image completes all phases
 }
 
 // SyncPhaseResult represents the result of the sync phase (Phase 1)

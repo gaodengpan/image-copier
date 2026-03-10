@@ -305,7 +305,7 @@ func processSyncTasks(logger *logrus.Logger, baseCfg *config.Config, tasks []syn
 	// Progress tracks all images (needsSync + synced) for unified summary display
 	totalCount := len(needsSync) + len(synced)
 	noOutput := outputFormat == "json"
-	p := progress.NewProgress(totalCount, workerCount, noOutput)
+	p := progress.NewProgress(totalCount, workerCount, noOutput, "pulling")
 
 	// Add needsSync images to progress
 	for i, t := range needsSync {

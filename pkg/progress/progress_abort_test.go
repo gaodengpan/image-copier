@@ -6,7 +6,7 @@ import (
 )
 
 func TestAbortWorkers_AbortsAllBars(t *testing.T) {
-	p := NewProgress(1, 1, false)
+	p := NewProgress(1, 1, false, "pulling")
 
 	time.Sleep(100 * time.Millisecond)
 
@@ -25,7 +25,7 @@ func TestAbortWorkers_AbortsAllBars(t *testing.T) {
 }
 
 func TestWaitContainer_ReturnsAfterAbort(t *testing.T) {
-	p := NewProgress(1, 1, false)
+	p := NewProgress(1, 1, false, "pulling")
 
 	p.AbortWorkers()
 
@@ -43,7 +43,7 @@ func TestWaitContainer_ReturnsAfterAbort(t *testing.T) {
 }
 
 func TestProgress_NewProgressWithZeroTotal_Abort(t *testing.T) {
-	p := NewProgress(0, 1, false)
+	p := NewProgress(0, 1, false, "pulling")
 
 	done := make(chan struct{})
 	go func() {

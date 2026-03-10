@@ -7,10 +7,13 @@ import (
 
 	"github.com/gaodengpan/image-copier/internal/domain/ports/input"
 	"github.com/gaodengpan/image-copier/internal/shared/sanitizer"
+	"github.com/gaodengpan/image-copier/pkg/progress"
 )
 
-// SyncCLIPresenter implements SyncPresenter for CLI output
-type SyncCLIPresenter struct{}
+// SyncCLIPresenter implements SyncPresenter for CLI output with progress bar support
+type SyncCLIPresenter struct {
+	progress *progress.Progress
+}
 
 // NewSyncCLIPresenter creates a new CLI presenter
 func NewSyncCLIPresenter() *SyncCLIPresenter {
@@ -22,46 +25,51 @@ func (p *SyncCLIPresenter) PresentSyncStart(count int) {
 	fmt.Printf("Starting sync for %d image(s)...\n\n", count)
 }
 
-// PresentSyncPhaseResult presents the sync phase result
+// PresentDiffSummary presents the diff result summary
+func (p *SyncCLIPresenter) PresentDiffSummary(alreadySynced, toSync int) {
+	fmt.Printf("Checking images against staging registry...\n")
+	fmt.Printf("  ✓ %d already synced\n", alreadySynced)
+	if toSync > 0 {
+		fmt.Printf("  → %d to sync\n\n", toSync)
+	} else {
+		fmt.Println()
+	}
+}
+
+// PresentProgress returns the progress manager for real-time updates
+func (p *SyncCLIPresenter) PresentProgress(total int, workerCount int) *progress.Progress {
+	p.progress = progress.NewProgress(total, workerCount, false, "syncing")
+	return p.progress
+}
+
+// PresentSyncPhaseResult is deprecated - use PresentSummary instead
 func (p *SyncCLIPresenter) PresentSyncPhaseResult(result *input.SyncPhaseResult) {
-	fmt.Println("=== Phase 1: Sync to Staging Registry ===")
-	fmt.Printf("Already existed: %d\n", len(result.AlreadyExisted))
-	fmt.Printf("Newly synced:    %d\n", len(result.NewlySynced))
-	if len(result.Failed) > 0 {
-		fmt.Printf("Failed:          %d\n", len(result.Failed))
-		for i, task := range result.Failed {
-			if i < len(result.Errors) {
-				fmt.Printf("  - %s: %v\n", task.DisplayName(), result.Errors[i])
-			} else {
-				fmt.Printf("  - %s: FAILED\n", task.DisplayName())
-			}
-		}
-	}
-	fmt.Println()
+	// No-op: results are now shown via progress bar and summary
 }
 
-// PresentDistributePhaseResult presents the distribute phase result
+// PresentDistributePhaseResult is deprecated - use PresentSummary instead
 func (p *SyncCLIPresenter) PresentDistributePhaseResult(result *input.DistributePhaseResult) {
-	fmt.Println("=== Phase 2: Distribute to Targets ===")
-	fmt.Printf("Success: %d\n", result.SuccessCount)
-	fmt.Printf("Skipped: %d\n", result.SkippedCount)
-	if result.FailedCount > 0 {
-		fmt.Printf("Failed:  %d\n", result.FailedCount)
-		for _, err := range result.Errors {
-			fmt.Printf("  - %s -> %s: %v\n", err.ImageName, err.TargetName, err.Error)
-		}
-	}
-	fmt.Println()
+	// No-op: results are now shown via progress bar and summary
 }
 
-// PresentSummary presents the final summary
+// PresentSummary presents the final summary after progress bar completes
 func (p *SyncCLIPresenter) PresentSummary(summary *SyncSummary) {
-	fmt.Println("=== Summary ===")
-	fmt.Printf("Total images: %d\n", summary.TotalImages)
-	fmt.Printf("Sync - Success: %d, Failed: %d\n", summary.SyncSuccess, summary.SyncFailed)
-	fmt.Printf("Dist - Success: %d, Skipped: %d, Failed: %d\n",
-		summary.DistSuccess, summary.DistSkipped, summary.DistFailed)
-	fmt.Printf("Duration: %s\n", summary.Duration.Round(time.Second))
+	// Progress bar already printed summary if it exists
+	if p.progress != nil {
+		return
+	}
+
+	// Fallback summary if no progress bar was used
+	fmt.Println()
+	totalDuration := summary.Duration.Round(time.Second)
+	totalFailed := summary.SyncFailed + summary.DistFailed
+	if totalFailed > 0 {
+		fmt.Printf("Summary: %d succeeded, %d skipped, %d failed | Total: %v\n",
+			summary.SyncSuccess, summary.DistSkipped, totalFailed, totalDuration)
+	} else {
+		fmt.Printf("Summary: %d succeeded, %d skipped | Total: %v\n",
+			summary.SyncSuccess, summary.DistSkipped, totalDuration)
+	}
 }
 
 // PresentError presents an error
@@ -71,7 +79,7 @@ func (p *SyncCLIPresenter) PresentError(err error) {
 
 // SyncJSONPresenter implements SyncPresenter for JSON output
 type SyncJSONPresenter struct {
-	syncResult      *input.SyncPhaseResult
+	syncResult       *input.SyncPhaseResult
 	distributeResult *input.DistributePhaseResult
 }
 
@@ -89,16 +97,16 @@ type jsonSyncResult struct {
 }
 
 type jsonImageResult struct {
-	Source       string                  `json:"source"`
-	StagingID    string                  `json:"staging_id,omitempty"`
-	SyncStatus   string                  `json:"sync_status"`
-	SyncError    *jsonError              `json:"sync_error,omitempty"`
+	Source       string                   `json:"source"`
+	StagingID    string                   `json:"staging_id,omitempty"`
+	SyncStatus   string                   `json:"sync_status"`
+	SyncError    *jsonError               `json:"sync_error,omitempty"`
 	Distribution []jsonDistributionResult `json:"distribution,omitempty"`
 }
 
 type jsonDistributionResult struct {
-	Target string    `json:"target"`
-	Status string    `json:"status"`
+	Target string     `json:"target"`
+	Status string     `json:"status"`
 	Error  *jsonError `json:"error,omitempty"`
 }
 
@@ -107,17 +115,27 @@ type jsonError struct {
 }
 
 type jsonSummary struct {
-	TotalImages      int    `json:"total_images"`
-	SyncSuccess      int    `json:"sync_success"`
-	SyncFailed       int    `json:"sync_failed"`
-	DistributeSuccess int   `json:"distribute_success"`
-	DistributeSkipped int   `json:"distribute_skipped"`
-	DistributeFailed  int   `json:"distribute_failed"`
+	TotalImages       int `json:"total_images"`
+	SyncSuccess       int `json:"sync_success"`
+	SyncFailed        int `json:"sync_failed"`
+	DistributeSuccess int `json:"distribute_success"`
+	DistributeSkipped int `json:"distribute_skipped"`
+	DistributeFailed  int `json:"distribute_failed"`
 }
 
 // PresentSyncStart presents the start of sync operation (no-op for JSON)
 func (p *SyncJSONPresenter) PresentSyncStart(count int) {
 	// No output during start for JSON mode
+}
+
+// PresentDiffSummary is no-op for JSON output
+func (p *SyncJSONPresenter) PresentDiffSummary(alreadySynced, toSync int) {
+	// No output for JSON mode
+}
+
+// PresentProgress returns nil for JSON mode (no progress bar)
+func (p *SyncJSONPresenter) PresentProgress(total int, workerCount int) *progress.Progress {
+	return progress.NewProgress(total, workerCount, true, "syncing")
 }
 
 // PresentSyncPhaseResult stores the sync phase result for later output

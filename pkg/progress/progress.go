@@ -3,6 +3,7 @@ package progress
 import (
 	"fmt"
 	"io"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/vbauerster/mpb/v8"
 	"github.com/vbauerster/mpb/v8/decor"
+	"golang.org/x/term"
 )
 
 // StageInfo holds the display information for a worker's current stage.
@@ -19,6 +21,37 @@ type StageInfo struct {
 	StageName string    // 阶段显示名称，如 "workflow running"
 	Percent   float64   // 子进度百分比 [0, 100]
 	StartAt   time.Time // 镜像开始处理时间
+}
+
+// SyncStage 定义 sync 命令的阶段
+type SyncStage int
+
+const (
+	SyncStageChecking     SyncStage = iota // 检查镜像存在性
+	SyncStageSyncing                       // 同步到中转仓库
+	SyncStageDistributing                  // 分发到目标
+)
+
+// String 返回阶段的显示名称
+func (s SyncStage) String() string {
+	switch s {
+	case SyncStageChecking:
+		return "checking"
+	case SyncStageSyncing:
+		return "sync"
+	case SyncStageDistributing:
+		return "dist"
+	default:
+		return "unknown"
+	}
+}
+
+// FormatStageWithTarget 格式化阶段名称，用于分发阶段显示目标名
+func FormatStageWithTarget(stage SyncStage, targetName string) string {
+	if stage == SyncStageDistributing && targetName != "" {
+		return "dist → " + targetName
+	}
+	return stage.String()
 }
 
 // ImageStatus represents the status of an image being processed
@@ -74,20 +107,35 @@ type Progress struct {
 	startedAt   time.Time
 	mu          sync.Mutex
 	noOutput    bool
+	operation   string // 操作名称 (pulling/syncing)
+}
+
+// isTerminal checks if stdout is connected to a terminal
+func isTerminal() bool {
+	return term.IsTerminal(int(os.Stdout.Fd()))
 }
 
 // NewProgress creates a new progress tracker with an mpb container.
 // workerCount determines how many worker status lines are displayed below the main bar.
 // If noOutput is true, no UI is displayed (useful for JSON output mode).
-func NewProgress(total int, workerCount int, noOutput bool) *Progress {
+// operation is the action name shown in the progress bar (e.g., "pulling", "syncing").
+func NewProgress(total int, workerCount int, noOutput bool, operation string) *Progress {
+	if operation == "" {
+		operation = "pulling"
+	}
+	// Disable progress bar if not a terminal (to avoid repeated line output)
+	if !noOutput && !isTerminal() {
+		noOutput = true
+	}
 	if noOutput {
 		p := &Progress{
 			images:    make([]*ImageProgress, total),
 			total:     total,
 			startedAt: time.Now(),
 			noOutput:  true,
+			operation: operation,
 		}
-		for i := 0; i < total; i++ {
+		for i := range total {
 			p.images[i] = &ImageProgress{}
 		}
 		return p
@@ -97,6 +145,7 @@ func NewProgress(total int, workerCount int, noOutput bool) *Progress {
 		mpb.WithWidth(64),
 	)
 
+	op := operation // capture for closure
 	mainBar := container.AddBar(int64(total),
 		mpb.PrependDecorators(
 			decor.Any(func(s decor.Statistics) string {
@@ -106,7 +155,7 @@ func NewProgress(total int, workerCount int, noOutput bool) *Progress {
 		mpb.AppendDecorators(
 			decor.Percentage(decor.WCSyncSpace),
 			decor.OnComplete(
-				decor.Name("pulling", decor.WCSyncSpace),
+				decor.Name(op, decor.WCSyncSpace),
 				"done",
 			),
 		),
@@ -115,7 +164,7 @@ func NewProgress(total int, workerCount int, noOutput bool) *Progress {
 	workerTexts := make([]*atomic.Value, workerCount)
 	workerBars := make([]*mpb.Bar, workerCount)
 
-	for i := 0; i < workerCount; i++ {
+	for i := range workerCount {
 		workerTexts[i] = &atomic.Value{}
 		workerTexts[i].Store(StageInfo{})
 
@@ -149,6 +198,7 @@ func NewProgress(total int, workerCount int, noOutput bool) *Progress {
 		total:       total,
 		startedAt:   time.Now(),
 		noOutput:    false,
+		operation:   op,
 	}
 
 	if total == 0 {
@@ -215,6 +265,36 @@ func (p *Progress) UpdateStage(workerIdx int, info StageInfo) {
 		return
 	}
 	p.workerTexts[workerIdx].Store(info)
+}
+
+// UpdateSyncStage 更新 sync 命令的工作阶段显示
+// stage: 当前阶段 (checking/sync/dist)
+// targetName: 分发目标名称（仅在 dist 阶段使用）
+// percent: 阶段内进度百分比 [0, 100]
+func (p *Progress) UpdateSyncStage(workerIdx int, imageName string, stage SyncStage, targetName string, percent float64) {
+	if p.noOutput || workerIdx >= len(p.workerTexts) {
+		return
+	}
+	stageName := FormatStageWithTarget(stage, targetName)
+	p.workerTexts[workerIdx].Store(StageInfo{
+		Label:     imageName,
+		StageName: stageName,
+		Percent:   percent,
+		StartAt:   time.Now(),
+	})
+}
+
+// ClearWorker 清除指定 worker 的显示
+func (p *Progress) ClearWorker(workerIdx int) {
+	if p.noOutput || workerIdx >= len(p.workerTexts) {
+		return
+	}
+	p.workerTexts[workerIdx].Store(StageInfo{})
+}
+
+// IsNoOutput returns true if progress output is disabled
+func (p *Progress) IsNoOutput() bool {
+	return p.noOutput
 }
 
 // GetImages returns a copy of all images with their status.
@@ -315,6 +395,10 @@ func (p *Progress) WaitContainer() {
 
 // Wait waits for the mpb render loop to finish, then prints the summary
 func (p *Progress) Wait() {
+	if p.noOutput {
+		p.printSummary()
+		return
+	}
 	for _, bar := range p.workerBars {
 		bar.Abort(true)
 	}

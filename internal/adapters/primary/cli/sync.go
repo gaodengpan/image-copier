@@ -15,6 +15,7 @@ import (
 	"github.com/gaodengpan/image-copier/internal/domain/ports/input"
 	"github.com/gaodengpan/image-copier/internal/infrastructure/config"
 	"github.com/gaodengpan/image-copier/pkg/logformat"
+	"github.com/gaodengpan/image-copier/pkg/progress"
 )
 
 // SyncCommandOptions defines options for the sync command
@@ -174,13 +175,16 @@ func executeSyncCommand(
 	logger *logrus.Logger,
 	cfg *config.Config,
 	images []string,
-	input input.SyncCommandInput,
+	syncInput input.SyncCommandInput,
 	outputFormat string,
 	verbose bool,
 ) error {
 	// Set log level based on verbose flag
 	if verbose {
 		logger.SetLevel(logrus.DebugLevel)
+	} else {
+		// In non-verbose mode, suppress info logs to avoid interfering with progress bar
+		logger.SetLevel(logrus.WarnLevel)
 	}
 
 	if len(images) == 0 {
@@ -198,6 +202,41 @@ func executeSyncCommand(
 
 	// Present start
 	presenter.PresentSyncStart(len(images))
+
+	// Create progress manager
+	prog := presenter.PresentProgress(len(images), syncInput.WorkerCount)
+
+	// Redirect logger output to progress bar's LogWriter for proper integration
+	// This ensures logs appear above the progress bar without breaking the animation
+	if !prog.IsNoOutput() {
+		logger.SetOutput(prog.LogWriter())
+	}
+
+	// Build image map for progress tracking
+	imageMap := make(map[string]int)
+	for i, img := range images {
+		imageMap[img] = i
+		prog.AddImage(i, img)
+	}
+
+	// Create progress callback
+	syncInput.ProgressCallback = func(imageID string, stage progress.SyncStage, targetName string, percent float64) {
+		if idx, ok := imageMap[imageID]; ok {
+			prog.UpdateSyncStage(idx%syncInput.WorkerCount, imageID, stage, targetName, percent)
+		}
+	}
+
+	// Create task complete callback for incrementing main progress bar
+	syncInput.TaskComplete = func(imageID string, err error) {
+		if idx, ok := imageMap[imageID]; ok {
+			if err != nil {
+				prog.UpdateStatus(idx, progress.StatusFailed, err)
+			} else {
+				prog.UpdateStatus(idx, progress.StatusCompleted, nil)
+			}
+			prog.Increment()
+		}
+	}
 
 	// Create factory and strategies
 	factory := adapters.NewAdapterFactory(logger)
@@ -236,23 +275,24 @@ func executeSyncCommand(
 	)
 
 	// Execute
-	result, err := syncUseCase.Execute(ctx, input)
+	result, err := syncUseCase.Execute(ctx, syncInput)
 	if err != nil {
+		prog.AbortWorkers()
 		presenter.PresentError(err)
 		return err
 	}
 
-	// Present results
-	if result.SyncPhase != nil {
-		presenter.PresentSyncPhaseResult(result.SyncPhase)
-	} else {
-		logger.Warn("SyncPhase result is nil, skipping sync phase presentation")
-	}
+	// Wait for progress bar to complete
+	prog.Wait()
 
-	if result.DistributePhase != nil {
-		presenter.PresentDistributePhaseResult(result.DistributePhase)
-	} else {
-		logger.Warn("DistributePhase result is nil, skipping distribute phase presentation")
+	// Present phase results for JSON mode
+	if outputFormat == "json" {
+		if result.SyncPhase != nil {
+			presenter.PresentSyncPhaseResult(result.SyncPhase)
+		}
+		if result.DistributePhase != nil {
+			presenter.PresentDistributePhaseResult(result.DistributePhase)
+		}
 	}
 
 	// Build summary with nil-safe access
@@ -293,6 +333,8 @@ func executeSyncCommand(
 // SyncPresenter defines the interface for presenting sync results
 type SyncPresenter interface {
 	PresentSyncStart(count int)
+	PresentDiffSummary(alreadySynced, toSync int)
+	PresentProgress(total int, workerCount int) *progress.Progress
 	PresentSyncPhaseResult(result *input.SyncPhaseResult)
 	PresentDistributePhaseResult(result *input.DistributePhaseResult)
 	PresentSummary(summary *SyncSummary)
