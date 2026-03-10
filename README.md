@@ -34,17 +34,17 @@ image-copier config init
 
 按提示填写 GitHub Token、国内 Registry 凭证等信息。
 
-### 3. 拉取镜像
+### 3. 同步镜像
 
 ```bash
 # 单个镜像
-image-copier pull nginx:latest
+image-copier sync nginx:latest
 
 # 批量镜像
-image-copier pull nginx:latest redis:7-alpine
+image-copier sync nginx:latest redis:7-alpine
 
 # YAML 清单（增量同步）
-image-copier pull -f images.yaml
+image-copier sync -f images.yaml
 ```
 
 ## 使用示例
@@ -64,19 +64,19 @@ images:
 
 ```bash
 # 预览（不执行）
-image-copier pull -f images.yaml --dry-run
+image-copier sync -f images.yaml --dry-run
 
 # 执行增量同步
-image-copier pull -f images.yaml
+image-copier sync -f images.yaml
 
 # 强制全量同步 + 并发 5
-image-copier pull -f images.yaml --force -j 5
+image-copier sync -f images.yaml --force -j 5
 
 # 带超时的同步（超时后取消未完成的镜像）
-image-copier pull -f images.yaml --timeout 5m
+image-copier sync -f images.yaml --timeout 5m
 
 # JSON 模式输出（适合脚本处理）
-image-copier pull -f images.yaml -o json
+image-copier sync -f images.yaml -o json
 ```
 
 ### 常用选项
@@ -159,7 +159,7 @@ log_level: "info"
 每次使用 CLI 时需设置相同密钥：
 ```bash
 export ENCRYPT_KEY="你的加密密钥"
-image-copier pull nginx:latest
+image-copier sync nginx:latest
 ```
 
 或写入 shell 配置文件（如 `~/.bashrc`）永久生效。
@@ -195,4 +195,4 @@ make install  # 安装到 /usr/local/bin
 | skopeo copy 失败 | 验证 Registry 凭证 |
 | 进度卡住 | GitHub Actions 排队中，等待或检查 Actions 页面 |
 
-调试：`image-copier pull -v nginx:latest`
+调试：`image-copier sync -v nginx:latest`

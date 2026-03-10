@@ -10,6 +10,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// MockConfigProvider is a mock implementation of the ConfigProvider interface
+type MockConfigProvider struct {
+	LoadFunc func() (*config.Config, error)
+}
+
+func (m *MockConfigProvider) Load() (*config.Config, error) {
+	if m.LoadFunc != nil {
+		return m.LoadFunc()
+	}
+	return &config.Config{}, nil
+}
+
+func (m *MockConfigProvider) GetConfigPath() string {
+	return "/mock/path/config.yaml"
+}
+
 func TestNewConfigCommandWithConfigProvider(t *testing.T) {
 	mockProvider := &MockConfigProvider{
 		LoadFunc: func() (*config.Config, error) {
