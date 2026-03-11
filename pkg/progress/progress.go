@@ -199,10 +199,11 @@ func (p *Progress) UpdateStage(workerIdx int, info StageInfo) {
 }
 
 // UpdateSyncStage 更新 sync 命令的工作阶段显示
+// workerIdx: 任务索引
 // stage: 当前阶段 (checking/sync/dist)
 // targetName: 分发目标名称（仅在 dist 阶段使用）
-// percent: 阶段内进度百分比 [0, 100]
-func (p *Progress) UpdateSyncStage(workerIdx int, imageName string, stage value_objects.SyncStage, targetName string, percent float64) {
+// percent: 未使用（保持接口兼容）
+func (p *Progress) UpdateSyncStage(workerIdx int, _ string, stage value_objects.SyncStage, targetName string, _ float64) {
 	if p.noOutput || p.homebrew == nil {
 		return
 	}
@@ -213,16 +214,7 @@ func (p *Progress) UpdateSyncStage(workerIdx int, imageName string, stage value_
 		stageName = "Uploading → " + targetName
 	}
 
-	// Update task status based on stage
-	var status TaskStatus
-	switch stage {
-	case value_objects.SyncStageChecking:
-		status = TaskRunning
-	default:
-		status = TaskRunning
-	}
-
-	p.homebrew.UpdateTask(workerIdx, status, stageName, nil)
+	p.homebrew.UpdateTask(workerIdx, TaskRunning, stageName, nil)
 }
 
 // ClearWorker 清除指定 worker 的显示
@@ -319,8 +311,8 @@ func (p *Progress) AbortWorkers() {
 	p.homebrew.Stop()
 }
 
-// WaitContainer waits for the mpb render loop to finish
-// This is now equivalent to stopping the HomebrewProgress animation.
+// WaitContainer stops the progress display without printing summary.
+// Kept for backward compatibility with existing callers.
 func (p *Progress) WaitContainer() {
 	if p.noOutput || p.homebrew == nil {
 		return
