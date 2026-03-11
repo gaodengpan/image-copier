@@ -79,7 +79,11 @@ func (uc *PullSingleImageUseCaseImpl) Execute(ctx context.Context, input PullSin
 	uc.logger.Infof("Processing image: %s", sanitizeForLog(input.ImageID))
 
 	sourceID := uc.imageIDService.NormalizeSourceID(input.ImageID)
-	destImageID := uc.registryClient.BuildDestImageID(sourceID, input.RegistryHost, input.RegistryNS)
+	destImageID := uc.registryClient.BuildDestImageID(output.BuildDestOptions{
+		SourceID:          sourceID,
+		RegistryHost:      input.RegistryHost,
+		RegistryNamespace: input.RegistryNS,
+	})
 
 	uc.notifyStage(StageCheckLocal, 0)
 	if !input.Force {
@@ -98,7 +102,11 @@ func (uc *PullSingleImageUseCaseImpl) Execute(ctx context.Context, input PullSin
 	}
 
 	uc.notifyStage(StageCheckRegistry, 0)
-	exists, err := uc.registryClient.ImageExists(ctx, destImageID, input.RegistryUser, input.RegistryPass)
+	exists, err := uc.registryClient.ImageExists(ctx, output.RegistryAuthOptions{
+		ImageID:  destImageID,
+		Username: input.RegistryUser,
+		Password: input.RegistryPass,
+	})
 	if err != nil {
 		return PullSingleImageOutput{}, fmt.Errorf("failed to check if image exists: %w", err)
 	}
@@ -221,7 +229,13 @@ func (uc *PullSingleImageUseCaseImpl) downloadAndLoadImage(ctx context.Context, 
 	}
 	defer cleanup()
 
-	if err := uc.registryClient.SaveImageToFile(ctx, registryImageID, userImageTag, tmpPath, username, password); err != nil {
+	if err := uc.registryClient.SaveImageToFile(ctx, output.RegistrySaveOptions{
+		ImageID:    registryImageID,
+		ImageTag:   userImageTag,
+		OutputPath: tmpPath,
+		Username:   username,
+		Password:   password,
+	}); err != nil {
 		return err
 	}
 

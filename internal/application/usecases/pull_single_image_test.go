@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gaodengpan/image-copier/internal/application/usecases/mocks"
+	"github.com/gaodengpan/image-copier/internal/domain/ports/output"
 	"github.com/gaodengpan/image-copier/internal/domain/services"
 	"github.com/gaodengpan/image-copier/internal/domain/validators"
 	"github.com/stretchr/testify/assert"
@@ -60,28 +61,28 @@ type mockRegistryClient struct {
 	mock.Mock
 }
 
-func (m *mockRegistryClient) ImageExists(ctx context.Context, imageID, username, password string) (bool, error) {
-	args := m.Called(ctx, imageID, username, password)
+func (m *mockRegistryClient) ImageExists(ctx context.Context, opts output.RegistryAuthOptions) (bool, error) {
+	args := m.Called(ctx, opts)
 	return args.Bool(0), args.Error(1)
 }
 
-func (m *mockRegistryClient) SaveImageToFile(ctx context.Context, imageID, imageTag, outputPath, username, password string) error {
-	args := m.Called(ctx, imageID, imageTag, outputPath, username, password)
+func (m *mockRegistryClient) SaveImageToFile(ctx context.Context, opts output.RegistrySaveOptions) error {
+	args := m.Called(ctx, opts)
 	return args.Error(0)
 }
 
-func (m *mockRegistryClient) SaveImageToWriter(ctx context.Context, imageID, imageTag string, writer io.Writer, username, password string) error {
-	args := m.Called(ctx, imageID, imageTag, writer, username, password)
+func (m *mockRegistryClient) SaveImageToWriter(ctx context.Context, opts output.RegistrySaveOptions) error {
+	args := m.Called(ctx, opts)
 	return args.Error(0)
 }
 
-func (m *mockRegistryClient) CheckImageExists(ctx context.Context, imageID, username, password string) (bool, error) {
-	args := m.Called(ctx, imageID, username, password)
+func (m *mockRegistryClient) CheckImageExists(ctx context.Context, opts output.RegistryAuthOptions) (bool, error) {
+	args := m.Called(ctx, opts)
 	return args.Bool(0), args.Error(1)
 }
 
-func (m *mockRegistryClient) BuildDestImageID(sourceID, registryHost, registryNamespace string) string {
-	args := m.Called(sourceID, registryHost, registryNamespace)
+func (m *mockRegistryClient) BuildDestImageID(opts output.BuildDestOptions) string {
+	args := m.Called(opts)
 	return args.String(0)
 }
 

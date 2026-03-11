@@ -12,6 +12,40 @@ func NewConfigBuilder() *ConfigBuilder {
 	}
 }
 
+// ConfigData represents CLI wizard configuration data
+type ConfigData struct {
+	GitHubOwner      string
+	GitHubRepo       string
+	GitHubToken      string
+	GitHubWorkflowID string
+
+	RegistryHost      string
+	RegistryUsername  string
+	RegistryPassword  string
+	RegistryNamespace string
+	RegistryArch      string
+	RegistryOs        string
+
+	PrivateRegistries []PrivateRegistry
+}
+
+// BuildFromConfigData creates a Config from ConfigData using the builder pattern
+func BuildFromConfigData(data *ConfigData) *Config {
+	return NewConfigBuilder().
+		WithGithubOwner(data.GitHubOwner).
+		WithGithubRepo(data.GitHubRepo).
+		WithGithubToken(data.GitHubToken).
+		WithGithubWorkflowID(data.GitHubWorkflowID).
+		WithRegistryHost(data.RegistryHost).
+		WithRegistryUsername(data.RegistryUsername).
+		WithRegistryPassword(data.RegistryPassword).
+		WithRegistryNamespace(data.RegistryNamespace).
+		WithRegistryArch(data.RegistryArch).
+		WithRegistryOs(data.RegistryOs).
+		WithPrivateRegistries(data.PrivateRegistries).
+		Build()
+}
+
 // WithGithubOwner sets the GitHub owner
 func (cb *ConfigBuilder) WithGithubOwner(owner string) *ConfigBuilder {
 	cb.config.Github.Owner = owner

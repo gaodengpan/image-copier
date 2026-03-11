@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -23,10 +22,10 @@ const (
 )
 
 type SkopeoAdapter struct {
-	commandRunner      func(ctx context.Context, name string, args ...string) *exec.Cmd
-	validator          *validators.ImageValidator
-	imageIDService     *services.ImageIDService
-	imageCheckTimeout  time.Duration
+	commandRunner     func(ctx context.Context, name string, args ...string) *exec.Cmd
+	validator         *validators.ImageValidator
+	imageIDService    *services.ImageIDService
+	imageCheckTimeout time.Duration
 }
 
 // extractRegistry extracts the registry host from an image ID
@@ -48,9 +47,9 @@ func NewSkopeoAdapter() *SkopeoAdapter {
 		commandRunner: func(ctx context.Context, name string, args ...string) *exec.Cmd {
 			return exec.CommandContext(ctx, name, args...)
 		},
-		validator:          validators.NewImageValidator(),
-		imageIDService:     services.NewImageIDService(),
-		imageCheckTimeout:  30 * time.Second,
+		validator:         validators.NewImageValidator(),
+		imageIDService:    services.NewImageIDService(),
+		imageCheckTimeout: 30 * time.Second,
 	}
 }
 
@@ -93,6 +92,14 @@ func createAuthFile(registry, username, password string) (string, error) {
 		return "", fmt.Errorf("failed to create temp auth file: %w", err)
 	}
 
+	// Set restrictive permissions before writing credentials
+	// 0600 = only owner can read/write
+	if err := tmpFile.Chmod(0600); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpFile.Name())
+		return "", fmt.Errorf("failed to set auth file permissions: %w", err)
+	}
+
 	if _, err := tmpFile.Write(data); err != nil {
 		tmpFile.Close()
 		os.Remove(tmpFile.Name())
@@ -116,19 +123,19 @@ func (a *SkopeoAdapter) buildSkopeoCmdWithAuth(ctx context.Context, authFile str
 	return cmd
 }
 
-func (a *SkopeoAdapter) ImageExists(ctx context.Context, imageID, username, password string) (bool, error) {
-	if !a.validator.IsValidImageName(imageID) {
+func (a *SkopeoAdapter) ImageExists(ctx context.Context, opts output.RegistryAuthOptions) (bool, error) {
+	if !a.validator.IsValidImageName(opts.ImageID) {
 		return false, errors.NewRegistryError("ImageExists", "invalid image name", nil)
 	}
 
-	if !a.validator.ValidateCredentials(username, password) {
+	if !a.validator.ValidateCredentials(opts.Username, opts.Password) {
 		return false, errors.NewRegistryError("ImageExists", "invalid credentials", nil)
 	}
 
-	registry := extractRegistry(imageID)
+	registry := extractRegistry(opts.ImageID)
 
 	// Create temp auth file
-	authFile, err := createAuthFile(registry, username, password)
+	authFile, err := createAuthFile(registry, opts.Username, opts.Password)
 	if err != nil {
 		return false, errors.NewRegistryError("ImageExists", "failed to create auth file", err)
 	}
@@ -138,7 +145,7 @@ func (a *SkopeoAdapter) ImageExists(ctx context.Context, imageID, username, pass
 	defer cancel()
 
 	// Use --authfile to pass credentials securely (not visible in process list)
-	cmd := a.buildSkopeoCmdWithAuth(ctx, authFile, "inspect", "--authfile", authFile, "docker://"+imageID)
+	cmd := a.buildSkopeoCmdWithAuth(ctx, authFile, "inspect", "--authfile", authFile, "docker://"+opts.ImageID)
 
 	_, err = cmd.Output()
 	if err != nil {
@@ -151,29 +158,29 @@ func (a *SkopeoAdapter) ImageExists(ctx context.Context, imageID, username, pass
 	return true, nil
 }
 
-func (a *SkopeoAdapter) SaveImageToFile(ctx context.Context, imageID, imageTag, outputPath, username, password string) error {
-	if !a.validator.IsValidImageName(imageID) {
+func (a *SkopeoAdapter) SaveImageToFile(ctx context.Context, opts output.RegistrySaveOptions) error {
+	if !a.validator.IsValidImageName(opts.ImageID) {
 		return errors.NewRegistryError("SaveImageToFile", "invalid image name", nil)
 	}
-	if !a.validator.ValidateFilePath(outputPath) {
+	if !a.validator.ValidateFilePath(opts.OutputPath) {
 		return errors.NewRegistryError("SaveImageToFile", "invalid file path", nil)
 	}
 
-	if !a.validator.ValidateCredentials(username, password) {
+	if !a.validator.ValidateCredentials(opts.Username, opts.Password) {
 		return errors.NewRegistryError("SaveImageToFile", "invalid credentials", nil)
 	}
 
-	registry := extractRegistry(imageID)
+	registry := extractRegistry(opts.ImageID)
 
 	// Create temp auth file
-	authFile, err := createAuthFile(registry, username, password)
+	authFile, err := createAuthFile(registry, opts.Username, opts.Password)
 	if err != nil {
 		return errors.NewRegistryError("SaveImageToFile", "failed to create auth file", err)
 	}
 	defer os.Remove(authFile)
 
 	// Use --authfile to pass credentials securely
-	cmd := a.buildSkopeoCmdWithAuth(ctx, authFile, "copy", "--authfile", authFile, "docker://"+imageID, "docker-archive:"+outputPath+":"+imageTag)
+	cmd := a.buildSkopeoCmdWithAuth(ctx, authFile, "copy", "--authfile", authFile, "docker://"+opts.ImageID, "docker-archive:"+opts.OutputPath+":"+opts.ImageTag)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -184,19 +191,19 @@ func (a *SkopeoAdapter) SaveImageToFile(ctx context.Context, imageID, imageTag, 
 	return nil
 }
 
-func (a *SkopeoAdapter) CheckImageExists(ctx context.Context, imageID, username, password string) (bool, error) {
-	if !a.validator.IsValidImageName(imageID) {
+func (a *SkopeoAdapter) CheckImageExists(ctx context.Context, opts output.RegistryAuthOptions) (bool, error) {
+	if !a.validator.IsValidImageName(opts.ImageID) {
 		return false, errors.NewRegistryError("CheckImageExists", "invalid image name", nil)
 	}
 
-	if !a.validator.ValidateCredentials(username, password) {
+	if !a.validator.ValidateCredentials(opts.Username, opts.Password) {
 		return false, errors.NewRegistryError("CheckImageExists", "invalid credentials", nil)
 	}
 
-	registry := extractRegistry(imageID)
+	registry := extractRegistry(opts.ImageID)
 
 	// Create temp auth file
-	authFile, err := createAuthFile(registry, username, password)
+	authFile, err := createAuthFile(registry, opts.Username, opts.Password)
 	if err != nil {
 		return false, errors.NewRegistryError("CheckImageExists", "failed to create auth file", err)
 	}
@@ -206,7 +213,7 @@ func (a *SkopeoAdapter) CheckImageExists(ctx context.Context, imageID, username,
 	defer cancel()
 
 	// Use --authfile to pass credentials securely
-	cmd := a.buildSkopeoCmdWithAuth(ctx, authFile, "inspect", "--authfile", authFile, "docker://"+imageID)
+	cmd := a.buildSkopeoCmdWithAuth(ctx, authFile, "inspect", "--authfile", authFile, "docker://"+opts.ImageID)
 
 	_, err = cmd.Output()
 	if err != nil {
@@ -219,32 +226,36 @@ func (a *SkopeoAdapter) CheckImageExists(ctx context.Context, imageID, username,
 	return true, nil
 }
 
-func (a *SkopeoAdapter) BuildDestImageID(sourceID, registryHost, registryNamespace string) string {
-	return a.imageIDService.BuildDestImageID(sourceID, registryHost, registryNamespace)
+func (a *SkopeoAdapter) BuildDestImageID(opts output.BuildDestOptions) string {
+	return a.imageIDService.BuildDestImageID(opts.SourceID, opts.RegistryHost, opts.RegistryNamespace)
 }
 
 // SaveImageToWriter saves a registry image to a writer using streaming
-func (a *SkopeoAdapter) SaveImageToWriter(ctx context.Context, imageID, imageTag string, writer io.Writer, username, password string) error {
-	if !a.validator.IsValidImageName(imageID) {
+func (a *SkopeoAdapter) SaveImageToWriter(ctx context.Context, opts output.RegistrySaveOptions) error {
+	if !a.validator.IsValidImageName(opts.ImageID) {
 		return errors.NewRegistryError("SaveImageToWriter", "invalid image name", nil)
 	}
 
-	if !a.validator.ValidateCredentials(username, password) {
+	if !a.validator.ValidateCredentials(opts.Username, opts.Password) {
 		return errors.NewRegistryError("SaveImageToWriter", "invalid credentials", nil)
 	}
 
-	registry := extractRegistry(imageID)
+	if opts.Writer == nil {
+		return errors.NewRegistryError("SaveImageToWriter", "writer is required", nil)
+	}
+
+	registry := extractRegistry(opts.ImageID)
 
 	// Create temp auth file
-	authFile, err := createAuthFile(registry, username, password)
+	authFile, err := createAuthFile(registry, opts.Username, opts.Password)
 	if err != nil {
 		return errors.NewRegistryError("SaveImageToWriter", "failed to create auth file", err)
 	}
 	defer os.Remove(authFile)
 
 	// Use skopeo copy to stdout
-	cmd := a.buildSkopeoCmdWithAuth(ctx, authFile, "copy", "--authfile", authFile, "docker://"+imageID, "docker-archive:/dev/stdout:"+imageTag)
-	cmd.Stdout = writer
+	cmd := a.buildSkopeoCmdWithAuth(ctx, authFile, "copy", "--authfile", authFile, "docker://"+opts.ImageID, "docker-archive:/dev/stdout:"+opts.ImageTag)
+	cmd.Stdout = opts.Writer
 	cmd.Stderr = os.Stderr // Redirect stderr to show progress
 
 	if err := cmd.Run(); err != nil {

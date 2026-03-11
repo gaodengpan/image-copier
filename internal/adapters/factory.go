@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gaodengpan/image-copier/internal/adapters/secondary/gateways"
+	"github.com/gaodengpan/image-copier/internal/adapters/secondary/logging"
 	"github.com/gaodengpan/image-copier/internal/domain/ports/output"
 	"github.com/gaodengpan/image-copier/internal/domain/services"
 	"github.com/gaodengpan/image-copier/internal/infrastructure/system"
@@ -48,6 +49,7 @@ func (f *AdapterFactory) CreateImageIDService() *services.ImageIDService {
 	return services.NewImageIDService()
 }
 
-func (f *AdapterFactory) CreateLogrusLogger() *logrus.Logger {
-	return f.logger
+// CreateLogger returns a Logger interface implementation
+func (f *AdapterFactory) CreateLogger() output.Logger {
+	return logging.NewLogrusLogger(f.logger)
 }

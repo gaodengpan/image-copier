@@ -80,11 +80,11 @@ func createAuthFileForRegistry(username, password string) (string, error) {
 }
 
 func (s *RegistrySyncStrategy) SyncFromRegistry(ctx context.Context, opts output.SyncTargetOptions) error {
-	sourceImageID := s.registryClient.BuildDestImageID(
-		opts.SourceImageID,
-		opts.SourceRegistryHost,
-		opts.SourceRegistryNS,
-	)
+	sourceImageID := s.registryClient.BuildDestImageID(output.BuildDestOptions{
+		SourceID:          opts.SourceImageID,
+		RegistryHost:      opts.SourceRegistryHost,
+		RegistryNamespace: opts.SourceRegistryNS,
+	})
 
 	targetImageID := s.buildTargetImageID(opts.TargetRegistryHost, opts.SourceImageID)
 
@@ -125,7 +125,11 @@ func (s *RegistrySyncStrategy) SyncFromRegistry(ctx context.Context, opts output
 
 func (s *RegistrySyncStrategy) ExistsInTarget(ctx context.Context, opts output.SyncTargetOptions) (bool, error) {
 	targetImageID := s.buildTargetImageID(opts.TargetRegistryHost, opts.SourceImageID)
-	return s.registryClient.CheckImageExists(ctx, targetImageID, opts.TargetRegistryUsername, opts.TargetRegistryPassword)
+	return s.registryClient.CheckImageExists(ctx, output.RegistryAuthOptions{
+		ImageID:  targetImageID,
+		Username: opts.TargetRegistryUsername,
+		Password: opts.TargetRegistryPassword,
+	})
 }
 
 func (s *RegistrySyncStrategy) Name() output.SyncTargetType {
@@ -164,7 +168,10 @@ func (s *RegistrySyncStrategy) TargetType() value_objects.TargetType {
 }
 
 func (s *RegistrySyncStrategy) buildTargetImageID(registryHost, sourceImageID string) string {
-	return s.registryClient.BuildDestImageID(sourceImageID, registryHost, "")
+	return s.registryClient.BuildDestImageID(output.BuildDestOptions{
+		SourceID:     sourceImageID,
+		RegistryHost: registryHost,
+	})
 }
 
 var _ output.SyncTargetStrategy = (*RegistrySyncStrategy)(nil)

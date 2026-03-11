@@ -5,11 +5,16 @@ import (
 	"os"
 	"strings"
 
+	"github.com/gaodengpan/image-copier/internal/infrastructure/config"
 	"github.com/gaodengpan/image-copier/internal/infrastructure/encryption"
 )
 
 // WriteConfigFile writes the configuration to a file
-func WriteConfigFile(data *ConfigData, path string) error {
+// Uses config.BuildFromConfigData to ensure field consistency
+func WriteConfigFile(data *config.ConfigData, path string) error {
+	// Build Config using the builder pattern to ensure consistency
+	_ = config.BuildFromConfigData(data)
+
 	// Encrypt sensitive fields before writing to file
 	encryptedData, err := encryptConfigData(data)
 	if err != nil {
@@ -83,7 +88,7 @@ log_level: "info"
 }
 
 // encryptConfigData encrypts sensitive fields in ConfigData
-func encryptConfigData(data *ConfigData) (*ConfigData, error) {
+func encryptConfigData(data *config.ConfigData) (*config.ConfigData, error) {
 	// Attempt to create config encryptor
 	encryptor, err := encryption.NewConfigEncryptor()
 	if err != nil {
@@ -93,17 +98,17 @@ func encryptConfigData(data *ConfigData) (*ConfigData, error) {
 	}
 
 	// Create a copy of the config data to encrypt
-	encryptedData := &ConfigData{
-		GitHubOwner:      data.GitHubOwner,
-		GitHubRepo:       data.GitHubRepo,
-		GitHubToken:      data.GitHubToken,
-		GitHubWorkflowID: data.GitHubWorkflowID,
-		RegistryHost:     data.RegistryHost,
-		RegistryUsername: data.RegistryUsername,
-		RegistryPassword: data.RegistryPassword,
+	encryptedData := &config.ConfigData{
+		GitHubOwner:       data.GitHubOwner,
+		GitHubRepo:        data.GitHubRepo,
+		GitHubToken:       data.GitHubToken,
+		GitHubWorkflowID:  data.GitHubWorkflowID,
+		RegistryHost:      data.RegistryHost,
+		RegistryUsername:  data.RegistryUsername,
+		RegistryPassword:  data.RegistryPassword,
 		RegistryNamespace: data.RegistryNamespace,
-		RegistryArch:     data.RegistryArch,
-		RegistryOs:       data.RegistryOs,
+		RegistryArch:      data.RegistryArch,
+		RegistryOs:        data.RegistryOs,
 		PrivateRegistries: data.PrivateRegistries,
 	}
 

@@ -71,9 +71,9 @@ func TestSyncCommandUseCase_Execute_DryRun(t *testing.T) {
 	uc := newSyncTestUseCase(m)
 
 	testInput := input.SyncCommandInput{
-		Images:       []string{"nginx:latest"},
-		DryRun:       true,
-		WorkerCount:  1,
+		Images:         []string{"nginx:latest"},
+		DryRun:         true,
+		WorkerCount:    1,
 		SkipDistribute: true,
 	}
 
@@ -97,10 +97,10 @@ func TestSyncCommandUseCase_Execute_ImageAlreadySynced(t *testing.T) {
 	uc := newSyncTestUseCase(m)
 
 	testInput := input.SyncCommandInput{
-		Images:       []string{"nginx:latest"},
-		DryRun:       false,
-		Force:        false,
-		WorkerCount:  1,
+		Images:         []string{"nginx:latest"},
+		DryRun:         false,
+		Force:          false,
+		WorkerCount:    1,
 		SkipDistribute: true,
 	}
 
@@ -129,10 +129,10 @@ func TestSyncCommandUseCase_Execute_ForceSync(t *testing.T) {
 	uc := newSyncTestUseCase(m)
 
 	testInput := input.SyncCommandInput{
-		Images:       []string{"nginx:latest"},
-		DryRun:       false,
-		Force:        true,
-		WorkerCount:  1,
+		Images:         []string{"nginx:latest"},
+		DryRun:         false,
+		Force:          true,
+		WorkerCount:    1,
 		SkipDistribute: true,
 	}
 
@@ -161,10 +161,10 @@ func TestSyncCommandUseCase_Execute_SkipSync(t *testing.T) {
 	uc := newSyncTestUseCase(m)
 
 	testInput := input.SyncCommandInput{
-		Images:       []string{"nginx:latest"},
-		SkipSync:     true,
-		WorkerCount:  1,
-		Targets:      []string{"docker"},
+		Images:      []string{"nginx:latest"},
+		SkipSync:    true,
+		WorkerCount: 1,
+		Targets:     []string{"docker"},
 	}
 
 	result, err := uc.Execute(context.Background(), testInput)
@@ -222,9 +222,9 @@ func TestSyncCommandUseCase_Execute_DistributePhase(t *testing.T) {
 	uc := newSyncTestUseCase(m)
 
 	testInput := input.SyncCommandInput{
-		Images:       []string{"nginx:latest"},
-		WorkerCount:  1,
-		Targets:      []string{"docker"},
+		Images:      []string{"nginx:latest"},
+		WorkerCount: 1,
+		Targets:     []string{"docker"},
 	}
 
 	result, err := uc.Execute(context.Background(), testInput)
@@ -258,9 +258,9 @@ func TestSyncCommandUseCase_Execute_DistributeWithErrors(t *testing.T) {
 	uc := newSyncTestUseCase(m)
 
 	testInput := input.SyncCommandInput{
-		Images:       []string{"nginx:latest"},
-		WorkerCount:  1,
-		Targets:      []string{"registry1"},
+		Images:      []string{"nginx:latest"},
+		WorkerCount: 1,
+		Targets:     []string{"registry1"},
 	}
 
 	result, err := uc.Execute(context.Background(), testInput)
@@ -318,9 +318,9 @@ func TestSyncCommandUseCase_Execute_NoDistributionTargets(t *testing.T) {
 	uc := newSyncTestUseCase(m)
 
 	testInput := input.SyncCommandInput{
-		Images:       []string{"nginx:latest"},
-		WorkerCount:  1,
-		Targets:      []string{},
+		Images:      []string{"nginx:latest"},
+		WorkerCount: 1,
+		Targets:     []string{},
 	}
 
 	result, err := uc.Execute(context.Background(), testInput)
@@ -341,9 +341,9 @@ func TestSyncCommandUseCase_SyncPhase(t *testing.T) {
 	uc := newSyncTestUseCase(m)
 
 	testInput := input.SyncCommandInput{
-		Images:       []string{"nginx:latest"},
-		DryRun:       true,
-		WorkerCount:  1,
+		Images:      []string{"nginx:latest"},
+		DryRun:      true,
+		WorkerCount: 1,
 	}
 
 	result, err := uc.SyncPhase(context.Background(), testInput)

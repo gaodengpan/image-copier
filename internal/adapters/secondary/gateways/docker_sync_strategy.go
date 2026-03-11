@@ -27,11 +27,11 @@ func NewDockerSyncStrategy(
 }
 
 func (s *DockerSyncStrategy) SyncFromRegistry(ctx context.Context, opts output.SyncTargetOptions) error {
-	sourceImageID := s.registryClient.BuildDestImageID(
-		opts.SourceImageID,
-		opts.SourceRegistryHost,
-		opts.SourceRegistryNS,
-	)
+	sourceImageID := s.registryClient.BuildDestImageID(output.BuildDestOptions{
+		SourceID:          opts.SourceImageID,
+		RegistryHost:      opts.SourceRegistryHost,
+		RegistryNamespace: opts.SourceRegistryNS,
+	})
 
 	// For cross-VM scenarios (like lima), we still need to use a temp file
 	// because io.Pipe only works within the same process
@@ -45,14 +45,13 @@ func (s *DockerSyncStrategy) SyncFromRegistry(ctx context.Context, opts output.S
 	}
 	defer cleanup()
 
-	if err := s.registryClient.SaveImageToFile(
-		ctx,
-		sourceImageID,
-		opts.TargetImageTag,
-		tmpPath,
-		opts.SourceRegistryUsername,
-		opts.SourceRegistryPassword,
-	); err != nil {
+	if err := s.registryClient.SaveImageToFile(ctx, output.RegistrySaveOptions{
+		ImageID:    sourceImageID,
+		ImageTag:   opts.TargetImageTag,
+		OutputPath: tmpPath,
+		Username:   opts.SourceRegistryUsername,
+		Password:   opts.SourceRegistryPassword,
+	}); err != nil {
 		return fmt.Errorf("failed to save image to file: %w", err)
 	}
 
@@ -64,11 +63,11 @@ func (s *DockerSyncStrategy) SyncFromRegistry(ctx context.Context, opts output.S
 }
 
 func (s *DockerSyncStrategy) ExistsInTarget(ctx context.Context, opts output.SyncTargetOptions) (bool, error) {
-	sourceImageID := s.registryClient.BuildDestImageID(
-		opts.SourceImageID,
-		opts.SourceRegistryHost,
-		opts.SourceRegistryNS,
-	)
+	sourceImageID := s.registryClient.BuildDestImageID(output.BuildDestOptions{
+		SourceID:          opts.SourceImageID,
+		RegistryHost:      opts.SourceRegistryHost,
+		RegistryNamespace: opts.SourceRegistryNS,
+	})
 	return s.dockerClient.ImageExists(ctx, sourceImageID)
 }
 

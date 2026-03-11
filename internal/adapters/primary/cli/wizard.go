@@ -10,25 +10,8 @@ import (
 	"github.com/gaodengpan/image-copier/internal/infrastructure/config"
 )
 
-// ConfigData holds the configuration from the wizard
-type ConfigData struct {
-	GitHubOwner      string
-	GitHubRepo       string
-	GitHubToken      string
-	GitHubWorkflowID string
-
-	RegistryHost      string
-	RegistryUsername  string
-	RegistryPassword  string
-	RegistryNamespace string
-	RegistryArch      string
-	RegistryOs        string
-
-	PrivateRegistries []config.PrivateRegistry
-}
-
 // RunWizard runs the interactive configuration wizard
-func RunWizard(ctx context.Context, skipExisting bool, provider config.ConfigProvider) (*ConfigData, error) {
+func RunWizard(ctx context.Context, skipExisting bool, provider config.ConfigProvider) (*config.ConfigData, error) {
 	reader := bufio.NewReader(os.Stdin)
 
 	// Try to load existing config to provide defaults
@@ -39,7 +22,7 @@ func RunWizard(ctx context.Context, skipExisting bool, provider config.ConfigPro
 		}
 	}
 
-	data := &ConfigData{
+	data := &config.ConfigData{
 		GitHubWorkflowID: "image-copier-v2.yaml",
 		RegistryArch:     "amd64",
 		RegistryOs:       "linux",

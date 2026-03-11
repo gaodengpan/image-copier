@@ -14,7 +14,7 @@ func TestWriteConfigFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
-	data := &ConfigData{
+	data := &config.ConfigData{
 		GitHubOwner:       "owner",
 		GitHubRepo:        "repo",
 		GitHubToken:       "token",
@@ -42,7 +42,7 @@ func TestWriteConfigFile_WithPrivateRegistries(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
-	data := &ConfigData{
+	data := &config.ConfigData{
 		GitHubOwner:       "owner",
 		GitHubRepo:        "repo",
 		GitHubToken:       "token",

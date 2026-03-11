@@ -42,8 +42,8 @@ type SyncCommandInput struct {
 	SkipDistribute bool     // Skip distribute phase (only sync)
 
 	// Progress callback for real-time updates
-	ProgressCallback  SyncStageCallback
-	TaskComplete      TaskCompleteCallback // Called when each image completes all phases
+	ProgressCallback SyncStageCallback
+	TaskComplete     TaskCompleteCallback // Called when each image completes all phases
 }
 
 // SyncPhaseResult represents the result of the sync phase (Phase 1)

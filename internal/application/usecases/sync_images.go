@@ -137,8 +137,16 @@ func (uc *SyncImagesUseCaseImpl) diffPhase(ctx context.Context, tasks []entities
 			}
 
 			sourceID := task.Source
-			destID := uc.registryClient.BuildDestImageID(sourceID, uc.cfg.Config.Registry.Host, uc.cfg.Config.Registry.Namespace)
-			remoteExists, remoteErr := uc.registryClient.CheckImageExists(ctx, destID, uc.cfg.Config.Registry.Username, uc.cfg.Config.Registry.Password)
+			destID := uc.registryClient.BuildDestImageID(output.BuildDestOptions{
+				SourceID:          sourceID,
+				RegistryHost:      uc.cfg.Config.Registry.Host,
+				RegistryNamespace: uc.cfg.Config.Registry.Namespace,
+			})
+			remoteExists, remoteErr := uc.registryClient.CheckImageExists(ctx, output.RegistryAuthOptions{
+				ImageID:  destID,
+				Username: uc.cfg.Config.Registry.Username,
+				Password: uc.cfg.Config.Registry.Password,
+			})
 			localExists, localErr := uc.dockerClient.ImageExists(ctx, task.Source)
 
 			if remoteErr != nil {

@@ -9,6 +9,7 @@ import (
 	"github.com/gaodengpan/image-copier/internal/domain/entities"
 	"github.com/gaodengpan/image-copier/internal/domain/ports/input"
 	"github.com/gaodengpan/image-copier/internal/domain/ports/output"
+	"github.com/gaodengpan/image-copier/internal/utils/concurrency"
 	"github.com/gaodengpan/image-copier/pkg/progress"
 )
 
@@ -174,28 +175,26 @@ type diffResult struct {
 
 // diffStagingRegistry checks which images exist in the staging registry
 func (uc *SyncCommandUseCaseImpl) diffStagingRegistry(ctx context.Context, tasks []*entities.SyncTask, in input.SyncCommandInput) []diffResult {
-	results := make([]diffResult, len(tasks))
-
-	sem := make(chan struct{}, in.WorkerCount)
-	var wg sync.WaitGroup
-
-	for i, t := range tasks {
-		wg.Add(1)
-		go func(idx int, task *entities.SyncTask) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
+	rawResults := concurrency.CollectResults(concurrency.ParallelForEach(ctx, tasks, in.WorkerCount,
+		func(ctx context.Context, task *entities.SyncTask) (diffResult, error) {
 			// Notify progress: checking stage
 			if in.ProgressCallback != nil {
 				in.ProgressCallback(task.Source, progress.SyncStageChecking, "", 0)
 			}
 
 			sourceID := uc.imageIDService.NormalizeSourceID(task.Source)
-			destID := uc.registryClient.BuildDestImageID(sourceID, uc.syncConfig.StagingRegistryHost(), uc.syncConfig.StagingRegistryNamespace())
+			destID := uc.registryClient.BuildDestImageID(output.BuildDestOptions{
+				SourceID:          sourceID,
+				RegistryHost:      uc.syncConfig.StagingRegistryHost(),
+				RegistryNamespace: uc.syncConfig.StagingRegistryNamespace(),
+			})
 
 			uc.logger.Debugf("Checking image existence: %s -> %s", sourceID, destID)
-			exists, err := uc.registryClient.CheckImageExists(ctx, destID, uc.syncConfig.StagingRegistryUsername(), uc.syncConfig.StagingRegistryPassword())
+			exists, err := uc.registryClient.CheckImageExists(ctx, output.RegistryAuthOptions{
+				ImageID:  destID,
+				Username: uc.syncConfig.StagingRegistryUsername(),
+				Password: uc.syncConfig.StagingRegistryPassword(),
+			})
 			if err != nil {
 				uc.logger.Warn("Failed to check image existence for ", destID, ": ", err)
 			}
@@ -210,15 +209,18 @@ func (uc *SyncCommandUseCaseImpl) diffStagingRegistry(ctx context.Context, tasks
 				in.ProgressCallback(task.Source, progress.SyncStageChecking, "", 100)
 			}
 
-			results[idx] = diffResult{
+			return diffResult{
 				Task:         task,
 				RemoteExists: exists,
 				Error:        err,
-			}
-		}(i, t)
-	}
+			}, nil
+		}))
 
-	wg.Wait()
+	// Extract values from Result wrapper
+	results := make([]diffResult, len(rawResults))
+	for i, r := range rawResults {
+		results[i] = r.Value
+	}
 	return results
 }
 
@@ -227,34 +229,24 @@ func (uc *SyncCommandUseCaseImpl) diffStagingRegistry(ctx context.Context, tasks
 func (uc *SyncCommandUseCaseImpl) syncToStaging(ctx context.Context, tasks []*entities.SyncTask, in input.SyncCommandInput, result *input.SyncPhaseResult) {
 	uc.logger.Infof("Syncing %d images to staging registry with %d workers", len(tasks), in.WorkerCount)
 
-	sem := make(chan struct{}, in.WorkerCount)
-	var wg sync.WaitGroup
 	var mu sync.Mutex
 
-	for _, task := range tasks {
-		wg.Add(1)
-		go func(t *entities.SyncTask) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
-			if err := uc.syncSingleImageToStaging(ctx, t, in); err != nil {
-				mu.Lock()
-				// Add to Failed list
-				t.Fail(err)
-				result.Failed = append(result.Failed, t)
-				result.Errors = append(result.Errors, fmt.Errorf("failed to sync %s: %w", t.Source, err))
-				mu.Unlock()
-			} else {
-				// Add to NewlySynced list on success
-				mu.Lock()
-				result.NewlySynced = append(result.NewlySynced, t)
-				mu.Unlock()
-			}
-		}(task)
-	}
-
-	wg.Wait()
+	_ = concurrency.ParallelForEachSimple(ctx, tasks, in.WorkerCount, func(ctx context.Context, task *entities.SyncTask) error {
+		if err := uc.syncSingleImageToStaging(ctx, task, in); err != nil {
+			mu.Lock()
+			// Add to Failed list
+			task.Fail(err)
+			result.Failed = append(result.Failed, task)
+			result.Errors = append(result.Errors, fmt.Errorf("failed to sync %s: %w", task.Source, err))
+			mu.Unlock()
+			return err
+		}
+		// Add to NewlySynced list on success
+		mu.Lock()
+		result.NewlySynced = append(result.NewlySynced, task)
+		mu.Unlock()
+		return nil
+	})
 }
 
 // syncSingleImageToStaging syncs a single image to the staging registry
@@ -262,7 +254,11 @@ func (uc *SyncCommandUseCaseImpl) syncToStaging(ctx context.Context, tasks []*en
 // so we don't need to check again here.
 func (uc *SyncCommandUseCaseImpl) syncSingleImageToStaging(ctx context.Context, task *entities.SyncTask, in input.SyncCommandInput) error {
 	sourceID := uc.imageIDService.NormalizeSourceID(task.Source)
-	destID := uc.registryClient.BuildDestImageID(sourceID, uc.syncConfig.StagingRegistryHost(), uc.syncConfig.StagingRegistryNamespace())
+	destID := uc.registryClient.BuildDestImageID(output.BuildDestOptions{
+		SourceID:          sourceID,
+		RegistryHost:      uc.syncConfig.StagingRegistryHost(),
+		RegistryNamespace: uc.syncConfig.StagingRegistryNamespace(),
+	})
 
 	arch := task.Arch
 	if arch == "" {
@@ -345,88 +341,77 @@ func (uc *SyncCommandUseCaseImpl) executeDistributePhase(ctx context.Context, ta
 	// Build distribution targets
 	distributionTargets := uc.targetBuilder.BuildTargets(targets)
 
-	// Distribute in parallel with semaphore to limit concurrency
-	sem := make(chan struct{}, in.WorkerCount)
-	var wg sync.WaitGroup
 	var mu sync.Mutex
 
-	for _, task := range tasks {
-		wg.Add(1)
-		go func(t *entities.DistributeTask) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
-			// Start the task
-			if err := t.Start(); err != nil {
-				mu.Lock()
-				result.Errors = append(result.Errors, input.TargetError{
-					ImageName:  t.OriginalSource,
-					TargetName: "internal",
-					Error:      err,
-				})
-				// Notify task complete with error
-				if in.TaskComplete != nil {
-					in.TaskComplete(t.OriginalSource, err)
-				}
-				mu.Unlock()
-				return
-			}
-
-			// Notify progress: distribution stage started (0%)
-			if in.ProgressCallback != nil {
-				in.ProgressCallback(t.OriginalSource, progress.SyncStageDistributing, "", 0)
-			}
-
-			// Use distributor to distribute to all targets
-			distResult := uc.distributor.DistributeToAll(
-				ctx, t, distributionTargets,
-				output.StagingRegistryConfig{
-					Host:      uc.syncConfig.StagingRegistryHost(),
-					Namespace: uc.syncConfig.StagingRegistryNamespace(),
-					Username:  uc.syncConfig.StagingRegistryUsername(),
-					Password:  uc.syncConfig.StagingRegistryPassword(),
-				},
-				in.Force,
-			)
-
+	_ = concurrency.ParallelForEachSimple(ctx, tasks, in.WorkerCount, func(ctx context.Context, t *entities.DistributeTask) error {
+		// Start the task
+		if err := t.Start(); err != nil {
 			mu.Lock()
-			// Add results to task
-			totalTargets := len(distResult.Results)
-			for i, r := range distResult.Results {
-				t.AddResult(r)
-				if r.Error != nil {
-					result.Errors = append(result.Errors, input.TargetError{
-						ImageName:  t.OriginalSource,
-						TargetName: r.TargetName,
-						Error:      r.Error,
-					})
-				}
-				// Notify progress for each target with cumulative percentage
-				if in.ProgressCallback != nil {
-					percent := float64(i+1) * 100.0 / float64(totalTargets)
-					in.ProgressCallback(t.OriginalSource, progress.SyncStageDistributing, r.TargetName, percent)
-				}
-			}
-
-			// Update task state based on results
-			var taskErr error
-			if t.HasErrors() {
-				taskErr = fmt.Errorf("distribution completed with errors")
-				t.Fail(taskErr)
-			} else {
-				t.Complete()
-			}
-
-			// Notify task complete
+			result.Errors = append(result.Errors, input.TargetError{
+				ImageName:  t.OriginalSource,
+				TargetName: "internal",
+				Error:      err,
+			})
+			// Notify task complete with error
 			if in.TaskComplete != nil {
-				in.TaskComplete(t.OriginalSource, taskErr)
+				in.TaskComplete(t.OriginalSource, err)
 			}
 			mu.Unlock()
-		}(task)
-	}
+			return err
+		}
 
-	wg.Wait()
+		// Notify progress: distribution stage started (0%)
+		if in.ProgressCallback != nil {
+			in.ProgressCallback(t.OriginalSource, progress.SyncStageDistributing, "", 0)
+		}
+
+		// Use distributor to distribute to all targets
+		distResult := uc.distributor.DistributeToAll(
+			ctx, t, distributionTargets,
+			output.StagingRegistryConfig{
+				Host:      uc.syncConfig.StagingRegistryHost(),
+				Namespace: uc.syncConfig.StagingRegistryNamespace(),
+				Username:  uc.syncConfig.StagingRegistryUsername(),
+				Password:  uc.syncConfig.StagingRegistryPassword(),
+			},
+			in.Force,
+		)
+
+		mu.Lock()
+		// Add results to task
+		totalTargets := len(distResult.Results)
+		for i, r := range distResult.Results {
+			t.AddResult(r)
+			if r.Error != nil {
+				result.Errors = append(result.Errors, input.TargetError{
+					ImageName:  t.OriginalSource,
+					TargetName: r.TargetName,
+					Error:      r.Error,
+				})
+			}
+			// Notify progress for each target with cumulative percentage
+			if in.ProgressCallback != nil {
+				percent := float64(i+1) * 100.0 / float64(totalTargets)
+				in.ProgressCallback(t.OriginalSource, progress.SyncStageDistributing, r.TargetName, percent)
+			}
+		}
+
+		// Update task state based on results
+		var taskErr error
+		if t.HasErrors() {
+			taskErr = fmt.Errorf("distribution completed with errors")
+			t.Fail(taskErr)
+		} else {
+			t.Complete()
+		}
+
+		// Notify task complete
+		if in.TaskComplete != nil {
+			in.TaskComplete(t.OriginalSource, taskErr)
+		}
+		mu.Unlock()
+		return nil
+	})
 
 	// Calculate totals
 	for _, t := range tasks {

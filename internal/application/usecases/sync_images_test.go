@@ -66,8 +66,8 @@ func TestSyncImagesUseCase_Diff_AllImagesNeedSync(t *testing.T) {
 	logger := new(mockLogger)
 
 	docker.On("ImageExists", mock.Anything, "nginx").Return(false, nil)
-	registry.On("CheckImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(false, nil)
-	registry.On("BuildDestImageID", "nginx", "registry.com", "ns").Return("registry.com/ns/nginx:latest")
+	registry.On("CheckImageExists", mock.Anything, mock.Anything).Return(false, nil)
+	registry.On("BuildDestImageID", mock.Anything).Return("registry.com/ns/nginx:latest")
 
 	uc := newTestSyncUseCase(docker, registry, github, fs, logger)
 
@@ -91,8 +91,8 @@ func TestSyncImagesUseCase_Diff_AllImagesSynced(t *testing.T) {
 	logger := new(mockLogger)
 
 	docker.On("ImageExists", mock.Anything, "nginx").Return(true, nil)
-	registry.On("BuildDestImageID", "nginx", "registry.com", "ns").Return("registry.com/ns/nginx:latest")
-	registry.On("CheckImageExists", mock.Anything, "registry.com/ns/nginx:latest", "user", "pass").Return(false, nil)
+	registry.On("BuildDestImageID", mock.Anything).Return("registry.com/ns/nginx:latest")
+	registry.On("CheckImageExists", mock.Anything, mock.Anything).Return(false, nil)
 
 	uc := newTestSyncUseCase(docker, registry, github, fs, logger)
 
@@ -116,8 +116,8 @@ func TestSyncImagesUseCase_Diff_ForceOverridesLocalCheck(t *testing.T) {
 	logger := new(mockLogger)
 
 	docker.On("ImageExists", mock.Anything, "nginx").Return(true, nil)
-	registry.On("CheckImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(false, nil)
-	registry.On("BuildDestImageID", "nginx", "registry.com", "ns").Return("registry.com/ns/nginx:latest")
+	registry.On("CheckImageExists", mock.Anything, mock.Anything).Return(false, nil)
+	registry.On("BuildDestImageID", mock.Anything).Return("registry.com/ns/nginx:latest")
 
 	uc := newTestSyncUseCase(docker, registry, github, fs, logger)
 
@@ -144,8 +144,8 @@ func TestSyncImagesUseCase_Diff_MultipleImages(t *testing.T) {
 	docker.On("ImageExists", mock.Anything, "redis").Return(false, nil)
 	docker.On("ImageExists", mock.Anything, "postgres").Return(false, nil)
 
-	registry.On("BuildDestImageID", mock.Anything, "registry.com", "ns").Return("registry.com/ns/image:latest")
-	registry.On("CheckImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(false, nil).Maybe()
+	registry.On("BuildDestImageID", mock.Anything).Return("registry.com/ns/image:latest")
+	registry.On("CheckImageExists", mock.Anything, mock.Anything).Return(false, nil).Maybe()
 
 	uc := newTestSyncUseCase(docker, registry, github, fs, logger)
 
@@ -171,8 +171,8 @@ func TestSyncImagesUseCase_Diff_WithErrors(t *testing.T) {
 	logger := new(mockLogger)
 
 	docker.On("ImageExists", mock.Anything, "nginx").Return(false, assert.AnError)
-	registry.On("CheckImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(false, nil)
-	registry.On("BuildDestImageID", "nginx", "registry.com", "ns").Return("registry.com/ns/nginx:latest")
+	registry.On("CheckImageExists", mock.Anything, mock.Anything).Return(false, nil)
+	registry.On("BuildDestImageID", mock.Anything).Return("registry.com/ns/nginx:latest")
 
 	uc := newTestSyncUseCase(docker, registry, github, fs, logger)
 
@@ -195,8 +195,8 @@ func TestSyncImagesUseCase_Execute_DryRun(t *testing.T) {
 	logger := new(mockLogger)
 
 	docker.On("ImageExists", mock.Anything, mock.Anything).Return(false, nil)
-	registry.On("BuildDestImageID", mock.Anything, mock.Anything, mock.Anything).Return("registry.com/ns/image:latest")
-	registry.On("CheckImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(false, nil)
+	registry.On("BuildDestImageID", mock.Anything).Return("registry.com/ns/image:latest")
+	registry.On("CheckImageExists", mock.Anything, mock.Anything).Return(false, nil)
 
 	cfg := &config.Config{}
 	cfg.Registry.Host = "registry.com"
