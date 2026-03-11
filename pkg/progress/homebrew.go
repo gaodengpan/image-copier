@@ -44,7 +44,7 @@ func (s TaskStatus) String() string {
 // TaskLine represents a single task line in the display
 type TaskLine struct {
 	ImageName string
-	Stage     string      // "Checking", "Downloading", "Uploading"
+	Stage     string // "Checking", "Downloading", "Uploading"
 	Status    TaskStatus
 	Error     error
 	StartTime time.Time
@@ -172,23 +172,53 @@ func (p *HomebrewProgress) render() {
 		var line string
 		switch task.Status {
 		case TaskPending:
-			line = fmt.Sprintf("  %s %s", p.currentSpinner(), task.Stage)
+			if task.ImageName != "" {
+				line = fmt.Sprintf("  %s %s...", p.currentSpinner(), task.ImageName)
+			}
 		case TaskRunning:
 			elapsed := time.Since(task.StartTime).Truncate(time.Second)
-			line = fmt.Sprintf("  %s %s (%s)", p.currentSpinner(), task.Stage, elapsed)
+			if task.Stage != "" {
+				line = fmt.Sprintf("  %s %s %s...", p.currentSpinner(), task.Stage, task.ImageName)
+			} else {
+				line = fmt.Sprintf("  %s %s...", p.currentSpinner(), task.ImageName)
+			}
+			if elapsed > 0 {
+				line = fmt.Sprintf("  %s %s %s (%s)", p.currentSpinner(), task.Stage, task.ImageName, elapsed)
+			}
 		case TaskCompleted:
-			line = fmt.Sprintf("  ✓ %s", task.Stage)
+			elapsed := time.Since(task.StartTime).Truncate(time.Second)
+			line = fmt.Sprintf("  ✓ %s (%s)", task.ImageName, formatDurationHomebrew(elapsed))
 		case TaskFailed:
-			line = fmt.Sprintf("  ✗ %s", task.Stage)
+			elapsed := time.Since(task.StartTime).Truncate(time.Second)
+			line = fmt.Sprintf("  ✗ %s (%s)", task.ImageName, formatDurationHomebrew(elapsed))
 			if task.Error != nil {
 				line += fmt.Sprintf(": %v", task.Error)
 			}
 		case TaskSkipped:
-			line = fmt.Sprintf("  ◦ %s", task.Stage)
+			line = fmt.Sprintf("  ◦ %s", task.ImageName)
 		}
 
-		fmt.Fprintln(p.output, line)
+		if line != "" {
+			fmt.Fprintln(p.output, line)
+		}
 	}
+}
+
+// formatDurationHomebrew formats duration like Homebrew
+func formatDurationHomebrew(d time.Duration) string {
+	d = d.Truncate(time.Second)
+	if d < time.Second {
+		return "<1s"
+	}
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	m := int(d.Minutes())
+	s := int(d.Seconds()) % 60
+	if s == 0 {
+		return fmt.Sprintf("%dm", m)
+	}
+	return fmt.Sprintf("%dm%ds", m, s)
 }
 
 // UpdateTask updates a task's status and stage
