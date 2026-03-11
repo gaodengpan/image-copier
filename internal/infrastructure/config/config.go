@@ -4,161 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
-	"time"
 
-	"github.com/gaodengpan/image-copier/pkg/retry"
 	"github.com/spf13/viper"
 )
-
-// ValidationError represents a configuration validation error
-type ValidationError struct {
-	Field string
-	Value string
-}
-
-func (e *ValidationError) Error() string {
-	return fmt.Sprintf("validation error for field %s: invalid value %s", e.Field, e.Value)
-}
-
-// Config holds the configuration for image-copier
-type Config struct {
-	Github struct {
-		Owner      string `mapstructure:"owner"`
-		Repo       string `mapstructure:"repo"`
-		Token      string `mapstructure:"token"`
-		WorkflowID string `mapstructure:"workflow_id"`
-	} `mapstructure:"github"`
-
-	Registry struct {
-		Host      string `mapstructure:"host"`
-		Username  string `mapstructure:"username"`
-		Password  string `mapstructure:"password"`
-		Namespace string `mapstructure:"namespace"`
-		Arch      string `mapstructure:"arch"`
-		Os        string `mapstructure:"os"`
-	} `mapstructure:"registry"`
-
-	Retry struct {
-		MaxAttempts     string `mapstructure:"max_attempts"`
-		InitialInterval string `mapstructure:"initial_interval"`
-		MaxInterval     string `mapstructure:"max_interval"`
-	} `mapstructure:"retry"`
-
-	// Timeout configuration
-	Timeout TimeoutConfig `mapstructure:"timeout"`
-
-	PrivateRegistries []PrivateRegistry `mapstructure:"private_registries"`
-
-	// Distribution configuration
-	Distribution Distribution `mapstructure:"distribution"`
-
-	LogLevel string `mapstructure:"log_level"`
-	Force    bool
-	DryRun   bool
-}
-
-// TimeoutConfig holds timeout configuration
-type TimeoutConfig struct {
-	// ImageCheck is the timeout for checking image existence (default: 30s)
-	ImageCheck string `mapstructure:"image_check"`
-	// SyncOperation is the timeout for sync/copy operations (default: 10m)
-	SyncOperation string `mapstructure:"sync_operation"`
-	// WorkflowPoll is the interval for polling GitHub workflow status (default: 2s)
-	WorkflowPoll string `mapstructure:"workflow_poll"`
-	// WorkflowMaxPoll is the maximum number of polls for workflow status (default: 300)
-	WorkflowMaxPoll string `mapstructure:"workflow_max_poll"`
-}
-
-// DefaultTimeoutConfig returns the default timeout configuration
-func DefaultTimeoutConfig() TimeoutConfig {
-	return TimeoutConfig{
-		ImageCheck:     "30s",
-		SyncOperation:  "10m",
-		WorkflowPoll:   "2s",
-		WorkflowMaxPoll: "300",
-	}
-}
-
-// ParseImageCheck returns the parsed image check timeout
-func (t *TimeoutConfig) ParseImageCheck() time.Duration {
-	if t.ImageCheck == "" {
-		return 30 * time.Second
-	}
-	if d, err := time.ParseDuration(t.ImageCheck); err == nil {
-		return d
-	}
-	return 30 * time.Second
-}
-
-// ParseSyncOperation returns the parsed sync operation timeout
-func (t *TimeoutConfig) ParseSyncOperation() time.Duration {
-	if t.SyncOperation == "" {
-		return 10 * time.Minute
-	}
-	if d, err := time.ParseDuration(t.SyncOperation); err == nil {
-		return d
-	}
-	return 10 * time.Minute
-}
-
-// ParseWorkflowPoll returns the parsed workflow poll interval
-func (t *TimeoutConfig) ParseWorkflowPoll() time.Duration {
-	if t.WorkflowPoll == "" {
-		return 2 * time.Second
-	}
-	if d, err := time.ParseDuration(t.WorkflowPoll); err == nil {
-		return d
-	}
-	return 2 * time.Second
-}
-
-// ParseWorkflowMaxPoll returns the parsed maximum poll count
-func (t *TimeoutConfig) ParseWorkflowMaxPoll() int {
-	if t.WorkflowMaxPoll == "" {
-		return 300
-	}
-	if v, err := strconv.Atoi(t.WorkflowMaxPoll); err == nil && v > 0 {
-		return v
-	}
-	return 300
-}
-
-// Distribution holds distribution target configuration
-type Distribution struct {
-	DefaultTargets []string `mapstructure:"default_targets"`
-}
-
-type PrivateRegistry struct {
-	Name     string `mapstructure:"name"`
-	Host     string `mapstructure:"host"`
-	Username string `mapstructure:"username"`
-	Password string `mapstructure:"password"`
-}
-
-func (c *Config) GetPrivateRegistryByName(name string) *PrivateRegistry {
-	for i := range c.PrivateRegistries {
-		if c.PrivateRegistries[i].Name == name {
-			return &c.PrivateRegistries[i]
-		}
-	}
-	return nil
-}
-
-// GetDistributionTargets returns the list of distribution targets
-// If the provided targets list is not empty, it returns that list.
-// Otherwise, it returns the default targets from the configuration.
-func (c *Config) GetDistributionTargets(targets []string) []string {
-	if len(targets) > 0 {
-		return targets
-	}
-	return c.Distribution.DefaultTargets
-}
-
-// IsDockerTarget returns true if the target name is "docker"
-func IsDockerTarget(targetName string) bool {
-	return targetName == "docker"
-}
 
 // configDir returns the XDG-compliant configuration directory.
 func configDir() string {
@@ -174,203 +22,21 @@ func ConfigFilePath() string {
 	return filepath.Join(configDir(), "config.yaml")
 }
 
-// ValidateConfig validates the configuration
-func ValidateConfig(cfg *Config) error {
-	if cfg.Github.Owner == "" {
-		return fmt.Errorf("github owner is required")
-	}
-	if cfg.Github.Repo == "" {
-		return fmt.Errorf("github repo is required")
-	}
-	if cfg.Github.Token == "" {
-		return fmt.Errorf("github token is required")
-	}
-	if cfg.Registry.Host == "" {
-		return fmt.Errorf("registry host is required")
-	}
-	if cfg.Registry.Username == "" {
-		return fmt.Errorf("registry username is required")
-	}
-	if cfg.Registry.Password == "" {
-		return fmt.Errorf("registry password is required")
-	}
-	return nil
-}
-
-func validateConfig(cfg *Config) error {
-	return ValidateConfig(cfg)
-}
-
-// ParseRetryConfig converts string-based Retry config fields into a typed *retry.Config.
-// Empty or invalid fields fall back to retry.DefaultConfig() values.
-func (c *Config) ParseRetryConfig() *retry.Config {
-	defaults := retry.DefaultConfig()
-
-	maxAttempts := defaults.MaxAttempts
-	if c.Retry.MaxAttempts != "" {
-		if v, err := strconv.Atoi(c.Retry.MaxAttempts); err == nil && v > 0 {
-			maxAttempts = v
-		}
-	}
-
-	initialInterval := defaults.InitialInterval
-	if c.Retry.InitialInterval != "" {
-		if v, err := time.ParseDuration(c.Retry.InitialInterval); err == nil && v > 0 {
-			initialInterval = v
-		}
-	}
-
-	maxInterval := defaults.MaxInterval
-	if c.Retry.MaxInterval != "" {
-		if v, err := time.ParseDuration(c.Retry.MaxInterval); err == nil && v > 0 {
-			maxInterval = v
-		}
-	}
-
-	return &retry.Config{
-		MaxAttempts:     maxAttempts,
-		InitialInterval: initialInterval,
-		MaxInterval:     maxInterval,
-	}
-}
-
 // GetConfigPath returns the path to the config file if it exists.
 func GetConfigPath() string {
 	provider := NewViperConfigProvider()
 	return provider.GetConfigPath()
 }
 
-// ConfigBuilder provides a fluent interface for building Config instances
-type ConfigBuilder struct {
-	config *Config
-}
-
-// NewConfigBuilder creates a new ConfigBuilder instance
-func NewConfigBuilder() *ConfigBuilder {
-	return &ConfigBuilder{
-		config: &Config{},
-	}
-}
-
-// WithGithubOwner sets the GitHub owner
-func (cb *ConfigBuilder) WithGithubOwner(owner string) *ConfigBuilder {
-	cb.config.Github.Owner = owner
-	return cb
-}
-
-// WithGithubRepo sets the GitHub repository
-func (cb *ConfigBuilder) WithGithubRepo(repo string) *ConfigBuilder {
-	cb.config.Github.Repo = repo
-	return cb
-}
-
-// WithGithubToken sets the GitHub token
-func (cb *ConfigBuilder) WithGithubToken(token string) *ConfigBuilder {
-	cb.config.Github.Token = token
-	return cb
-}
-
-// WithGithubWorkflowID sets the GitHub workflow ID
-func (cb *ConfigBuilder) WithGithubWorkflowID(workflowID string) *ConfigBuilder {
-	cb.config.Github.WorkflowID = workflowID
-	return cb
-}
-
-// WithRegistryHost sets the registry host
-func (cb *ConfigBuilder) WithRegistryHost(host string) *ConfigBuilder {
-	cb.config.Registry.Host = host
-	return cb
-}
-
-// WithRegistryUsername sets the registry username
-func (cb *ConfigBuilder) WithRegistryUsername(username string) *ConfigBuilder {
-	cb.config.Registry.Username = username
-	return cb
-}
-
-// WithRegistryPassword sets the registry password
-func (cb *ConfigBuilder) WithRegistryPassword(password string) *ConfigBuilder {
-	cb.config.Registry.Password = password
-	return cb
-}
-
-// WithRegistryNamespace sets the registry namespace
-func (cb *ConfigBuilder) WithRegistryNamespace(namespace string) *ConfigBuilder {
-	cb.config.Registry.Namespace = namespace
-	return cb
-}
-
-// WithRegistryArch sets the registry architecture
-func (cb *ConfigBuilder) WithRegistryArch(arch string) *ConfigBuilder {
-	cb.config.Registry.Arch = arch
-	return cb
-}
-
-// WithRegistryOs sets the registry OS
-func (cb *ConfigBuilder) WithRegistryOs(os string) *ConfigBuilder {
-	cb.config.Registry.Os = os
-	return cb
-}
-
-// WithLogLevel sets the log level
-func (cb *ConfigBuilder) WithLogLevel(logLevel string) *ConfigBuilder {
-	cb.config.LogLevel = logLevel
-	return cb
-}
-
-// WithRetryMaxAttempts sets the retry max attempts
-func (cb *ConfigBuilder) WithRetryMaxAttempts(maxAttempts string) *ConfigBuilder {
-	cb.config.Retry.MaxAttempts = maxAttempts
-	return cb
-}
-
-// WithRetryInitialInterval sets the retry initial interval
-func (cb *ConfigBuilder) WithRetryInitialInterval(interval string) *ConfigBuilder {
-	cb.config.Retry.InitialInterval = interval
-	return cb
-}
-
-// WithRetryMaxInterval sets the retry max interval
-func (cb *ConfigBuilder) WithRetryMaxInterval(interval string) *ConfigBuilder {
-	cb.config.Retry.MaxInterval = interval
-	return cb
-}
-
-// WithRetryConfig sets the entire retry configuration
-func (cb *ConfigBuilder) WithRetryConfig(retryMaxAttempts, retryInitialInterval, retryMaxInterval string) *ConfigBuilder {
-	cb.config.Retry.MaxAttempts = retryMaxAttempts
-	cb.config.Retry.InitialInterval = retryInitialInterval
-	cb.config.Retry.MaxInterval = retryMaxInterval
-	return cb
-}
-
-// WithPrivateRegistry adds a private registry to the configuration
-func (cb *ConfigBuilder) WithPrivateRegistry(registry PrivateRegistry) *ConfigBuilder {
-	cb.config.PrivateRegistries = append(cb.config.PrivateRegistries, registry)
-	return cb
-}
-
-// WithPrivateRegistries sets all private registries
-func (cb *ConfigBuilder) WithPrivateRegistries(registries []PrivateRegistry) *ConfigBuilder {
-	cb.config.PrivateRegistries = registries
-	return cb
-}
-
-// WithDistribution sets the distribution configuration
-func (cb *ConfigBuilder) WithDistribution(defaultTargets []string) *ConfigBuilder {
-	cb.config.Distribution.DefaultTargets = defaultTargets
-	return cb
-}
-
-// Build returns the constructed Config
-func (cb *ConfigBuilder) Build() *Config {
-	return cb.config
-}
-
 // ConfigProvider interface to abstract configuration loading
 type ConfigProvider interface {
 	Load() (*Config, error)
 	GetConfigPath() string
+}
+
+// DefaultConfigProvider returns a ConfigProvider with default configuration
+func DefaultConfigProvider() ConfigProvider {
+	return NewEncryptedViperConfigProvider()
 }
 
 // ViperConfigProvider implementation that maintains current functionality
@@ -426,7 +92,7 @@ func (vp *ViperConfigProvider) Load() (*Config, error) {
 	}
 
 	// Validate required fields
-	if err := validateConfig(&cfg); err != nil {
+	if err := ValidateConfig(&cfg); err != nil {
 		return nil, err
 	}
 
@@ -467,7 +133,7 @@ func (vp *ViperConfigProvider) LoadWithPaths(configPath string) (*Config, error)
 	}
 
 	// Validate required fields
-	if err := validateConfig(&cfg); err != nil {
+	if err := ValidateConfig(&cfg); err != nil {
 		return nil, err
 	}
 
@@ -481,9 +147,4 @@ func (vp *ViperConfigProvider) GetConfigPath() string {
 		return p
 	}
 	return ""
-}
-
-// DefaultConfigProvider returns a ConfigProvider with default configuration
-func DefaultConfigProvider() ConfigProvider {
-	return NewEncryptedViperConfigProvider()
 }

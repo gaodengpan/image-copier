@@ -135,27 +135,31 @@ func (uc *SyncCommandUseCaseImpl) executeSyncPhase(ctx context.Context, tasks []
 	// Diff phase: check which images need sync
 	diffResults := uc.diffStagingRegistry(ctx, tasks, in)
 
+	// Separate tasks into already existed and needs sync
+	var needsSync []*entities.SyncTask
 	for _, diff := range diffResults {
 		if diff.RemoteExists && !in.Force {
 			result.AlreadyExisted = append(result.AlreadyExisted, diff.Task)
 		} else {
-			result.NewlySynced = append(result.NewlySynced, diff.Task)
+			needsSync = append(needsSync, diff.Task)
 		}
 		if diff.Error != nil {
 			result.Errors = append(result.Errors, diff.Error)
 		}
 	}
 
-	uc.logger.Infof("Diff complete: %d already existed, %d need sync", len(result.AlreadyExisted), len(result.NewlySynced))
+	uc.logger.Infof("Diff complete: %d already existed, %d need sync", len(result.AlreadyExisted), len(needsSync))
 
 	if in.DryRun {
-		uc.logger.Infof("[dry-run] Would sync %d images to staging registry", len(result.NewlySynced))
+		uc.logger.Infof("[dry-run] Would sync %d images to staging registry", len(needsSync))
+		// In dry-run mode, treat needsSync as newly synced for reporting
+		result.NewlySynced = needsSync
 		return result, nil
 	}
 
 	// Sync phase: trigger GitHub Actions for images that need sync
-	if len(result.NewlySynced) > 0 {
-		uc.syncToStaging(ctx, result.NewlySynced, in, result)
+	if len(needsSync) > 0 {
+		uc.syncToStaging(ctx, needsSync, in, result)
 	}
 
 	return result, nil
@@ -236,28 +240,21 @@ func (uc *SyncCommandUseCaseImpl) syncToStaging(ctx context.Context, tasks []*en
 
 			if err := uc.syncSingleImageToStaging(ctx, t, in); err != nil {
 				mu.Lock()
-				// Remove from NewlySynced and add to Failed
-				result.NewlySynced = removeTask(result.NewlySynced, t.Source)
-				t.Fail(err) // Set error on task
+				// Add to Failed list
+				t.Fail(err)
 				result.Failed = append(result.Failed, t)
 				result.Errors = append(result.Errors, fmt.Errorf("failed to sync %s: %w", t.Source, err))
 				mu.Unlock()
+			} else {
+				// Add to NewlySynced list on success
+				mu.Lock()
+				result.NewlySynced = append(result.NewlySynced, t)
+				mu.Unlock()
 			}
-			// If successful, task is already in NewlySynced from diff phase
 		}(task)
 	}
 
 	wg.Wait()
-}
-
-// removeTask removes a task from a slice by source identifier
-func removeTask(tasks []*entities.SyncTask, source string) []*entities.SyncTask {
-	for i, t := range tasks {
-		if t.Source == source {
-			return append(tasks[:i], tasks[i+1:]...)
-		}
-	}
-	return tasks
 }
 
 // syncSingleImageToStaging syncs a single image to the staging registry

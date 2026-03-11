@@ -68,7 +68,7 @@ func (evp *EncryptedViperConfigProvider) Load() (*Config, error) {
 	}
 
 	// Validate required fields
-	if err := validateConfig(decryptedCfg); err != nil {
+	if err := ValidateConfig(decryptedCfg); err != nil {
 		return nil, err
 	}
 
@@ -155,7 +155,7 @@ func (evp *EncryptedViperConfigProvider) LoadWithPaths(configPath string) (*Conf
 	}
 
 	// Validate required fields
-	if err := validateConfig(decryptedCfg); err != nil {
+	if err := ValidateConfig(decryptedCfg); err != nil {
 		return nil, err
 	}
 
