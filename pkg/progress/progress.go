@@ -7,12 +7,9 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/gaodengpan/image-copier/internal/domain/value_objects"
-	"github.com/vbauerster/mpb/v8"
-	"github.com/vbauerster/mpb/v8/decor"
 	"golang.org/x/term"
 )
 
@@ -31,6 +28,20 @@ func FormatStageWithTarget(stage value_objects.SyncStage, targetName string) str
 		return "dist → " + targetName
 	}
 	return stage.String()
+}
+
+// mapStageToDisplay 将 SyncStage 映射为显示名称
+func mapStageToDisplay(stage value_objects.SyncStage) string {
+	switch stage {
+	case value_objects.SyncStageChecking:
+		return "Checking"
+	case value_objects.SyncStageSyncing:
+		return "Downloading"
+	case value_objects.SyncStageDistributing:
+		return "Uploading"
+	default:
+		return stage.String()
+	}
 }
 
 // ImageStatus represents the status of an image being processed
@@ -77,16 +88,13 @@ type ImageProgress struct {
 
 // Progress manages the progress display for multiple images
 type Progress struct {
-	container   *mpb.Progress
-	mainBar     *mpb.Bar
-	workerBars  []*mpb.Bar
-	workerTexts []*atomic.Value
-	images      []*ImageProgress
-	total       int
-	startedAt   time.Time
-	mu          sync.Mutex
-	noOutput    bool
-	operation   string // 操作名称 (pulling/syncing)
+	homebrew  *HomebrewProgress
+	images    []*ImageProgress
+	total     int
+	startedAt time.Time
+	mu        sync.Mutex
+	noOutput  bool
+	operation string // 操作名称 (pulling/syncing)
 }
 
 // isTerminal checks if stdout is connected to a terminal
@@ -94,8 +102,8 @@ func isTerminal() bool {
 	return term.IsTerminal(int(os.Stdout.Fd()))
 }
 
-// NewProgress creates a new progress tracker with an mpb container.
-// workerCount determines how many worker status lines are displayed below the main bar.
+// NewProgress creates a new progress tracker with Homebrew-style display.
+// workerCount determines how many worker status lines are displayed.
 // If noOutput is true, no UI is displayed (useful for JSON output mode).
 // operation is the action name shown in the progress bar (e.g., "pulling", "syncing").
 func NewProgress(total int, workerCount int, noOutput bool, operation string) *Progress {
@@ -106,86 +114,22 @@ func NewProgress(total int, workerCount int, noOutput bool, operation string) *P
 	if !noOutput && !isTerminal() {
 		noOutput = true
 	}
-	if noOutput {
-		p := &Progress{
-			images:    make([]*ImageProgress, total),
-			total:     total,
-			startedAt: time.Now(),
-			noOutput:  true,
-			operation: operation,
-		}
-		for i := range total {
-			p.images[i] = &ImageProgress{}
-		}
-		return p
-	}
-
-	container := mpb.New(
-		mpb.WithWidth(64),
-	)
-
-	op := operation // capture for closure
-	mainBar := container.AddBar(int64(total),
-		mpb.PrependDecorators(
-			decor.Any(func(s decor.Statistics) string {
-				return fmt.Sprintf("[%d/%d]", s.Current, total)
-			}, decor.WCSyncSpace),
-		),
-		mpb.AppendDecorators(
-			decor.Percentage(decor.WCSyncSpace),
-			decor.OnComplete(
-				decor.Name(op, decor.WCSyncSpace),
-				"done",
-			),
-		),
-	)
-
-	workerTexts := make([]*atomic.Value, workerCount)
-	workerBars := make([]*mpb.Bar, workerCount)
-
-	for i := range workerCount {
-		workerTexts[i] = &atomic.Value{}
-		workerTexts[i].Store(StageInfo{})
-
-		idx := i
-		workerBars[i] = container.New(0,
-			mpb.NopStyle(),
-			mpb.PrependDecorators(
-				decor.Any(func(s decor.Statistics) string {
-					raw := workerTexts[idx].Load()
-					info, ok := raw.(StageInfo)
-					if !ok || info.Label == "" {
-						return ""
-					}
-					if info.StageName == "" {
-						return "  ◐ " + smartTruncate(stripHash(info.Label), 50)
-					}
-					elapsed := time.Since(info.StartAt).Truncate(time.Second)
-					return fmt.Sprintf("  ◐ %-50s [%3.0f%%] %s (%s)",
-						smartTruncate(stripHash(info.Label), 50), info.Percent, info.StageName, elapsed)
-				}),
-			),
-		)
-	}
 
 	p := &Progress{
-		container:   container,
-		mainBar:     mainBar,
-		workerBars:  workerBars,
-		workerTexts: workerTexts,
-		images:      make([]*ImageProgress, total),
-		total:       total,
-		startedAt:   time.Now(),
-		noOutput:    false,
-		operation:   op,
+		images:    make([]*ImageProgress, total),
+		total:     total,
+		startedAt: time.Now(),
+		noOutput:  noOutput,
+		operation: operation,
 	}
 
-	if total == 0 {
-		mainBar.Abort(true)
-		for _, bar := range workerBars {
-			bar.Abort(true)
-		}
+	for i := range total {
+		p.images[i] = &ImageProgress{}
 	}
+
+	// Create HomebrewProgress with total images
+	p.homebrew = NewHomebrewProgress(total, noOutput)
+	p.homebrew.Start()
 
 	return p
 }
@@ -198,6 +142,11 @@ func (p *Progress) AddImage(index int, image string) {
 	p.images[index] = &ImageProgress{
 		Image:  image,
 		Status: StatusPending,
+	}
+
+	// Also set image name in HomebrewProgress
+	if p.homebrew != nil {
+		p.homebrew.SetTaskImage(index, image)
 	}
 }
 
@@ -212,6 +161,18 @@ func (p *Progress) UpdateStatus(index int, status ImageStatus, err error) {
 
 	p.images[index].Status = status
 	p.images[index].Error = err
+
+	// Update HomebrewProgress based on status
+	if p.homebrew != nil {
+		switch status {
+		case StatusCompleted:
+			p.homebrew.CompleteTask(index)
+		case StatusFailed:
+			p.homebrew.FailTask(index, err)
+		case StatusSkipped:
+			p.homebrew.SkipTask(index)
+		}
+	}
 }
 
 // SetDuration records how long a specific image took to process.
@@ -226,24 +187,15 @@ func (p *Progress) SetDuration(index int, d time.Duration) {
 }
 
 // UpdateWorker sets the display text for a specific worker line.
-// Pass an empty string to clear the worker line (when idle between images).
+// This is now a no-op since HomebrewProgress shows all tasks.
 func (p *Progress) UpdateWorker(workerIdx int, imageName string) {
-	if p.noOutput || workerIdx >= len(p.workerTexts) {
-		return
-	}
-	if imageName == "" {
-		p.workerTexts[workerIdx].Store(StageInfo{})
-	} else {
-		p.workerTexts[workerIdx].Store(StageInfo{Label: imageName, StartAt: time.Now()})
-	}
+	// No-op: HomebrewProgress shows all tasks, not workers
 }
 
 // UpdateStage sets the stage display info for a worker.
+// This is now a no-op since HomebrewProgress uses UpdateSyncStage instead.
 func (p *Progress) UpdateStage(workerIdx int, info StageInfo) {
-	if p.noOutput || workerIdx >= len(p.workerTexts) {
-		return
-	}
-	p.workerTexts[workerIdx].Store(info)
+	// No-op: HomebrewProgress uses UpdateSyncStage instead
 }
 
 // UpdateSyncStage 更新 sync 命令的工作阶段显示
@@ -251,24 +203,32 @@ func (p *Progress) UpdateStage(workerIdx int, info StageInfo) {
 // targetName: 分发目标名称（仅在 dist 阶段使用）
 // percent: 阶段内进度百分比 [0, 100]
 func (p *Progress) UpdateSyncStage(workerIdx int, imageName string, stage value_objects.SyncStage, targetName string, percent float64) {
-	if p.noOutput || workerIdx >= len(p.workerTexts) {
+	if p.noOutput || p.homebrew == nil {
 		return
 	}
-	stageName := FormatStageWithTarget(stage, targetName)
-	p.workerTexts[workerIdx].Store(StageInfo{
-		Label:     imageName,
-		StageName: stageName,
-		Percent:   percent,
-		StartAt:   time.Now(),
-	})
+
+	// Map stage to display name
+	stageName := mapStageToDisplay(stage)
+	if stage == value_objects.SyncStageDistributing && targetName != "" {
+		stageName = "Uploading → " + targetName
+	}
+
+	// Update task status based on stage
+	var status TaskStatus
+	switch stage {
+	case value_objects.SyncStageChecking:
+		status = TaskRunning
+	default:
+		status = TaskRunning
+	}
+
+	p.homebrew.UpdateTask(workerIdx, status, stageName, nil)
 }
 
 // ClearWorker 清除指定 worker 的显示
+// This is now a no-op since HomebrewProgress manages task lines directly.
 func (p *Progress) ClearWorker(workerIdx int) {
-	if p.noOutput || workerIdx >= len(p.workerTexts) {
-		return
-	}
-	p.workerTexts[workerIdx].Store(StageInfo{})
+	// No-op: HomebrewProgress manages task lines directly
 }
 
 // IsNoOutput returns true if progress output is disabled
@@ -325,63 +285,56 @@ func smartTruncate(s string, maxLen int) string {
 }
 
 // Increment increments the main progress bar by 1
+// This is now a no-op since HomebrewProgress tracks tasks individually.
 func (p *Progress) Increment() {
-	if p.noOutput {
-		return
-	}
-	p.mainBar.Increment()
+	// No-op: HomebrewProgress tracks tasks individually
 }
 
 // SetInitialProgress sets the initial completed count (for already-skipped items)
+// This is now a no-op since HomebrewProgress tracks tasks individually.
 func (p *Progress) SetInitialProgress(count int) {
-	if p.noOutput {
-		return
-	}
-	p.mainBar.SetCurrent(int64(count))
+	// No-op: HomebrewProgress tracks tasks individually
 }
 
 // CompleteSkipped marks all images from index start as completed (for skipped items)
 func (p *Progress) CompleteSkipped(start int) {
-	if p.noOutput {
-		return
-	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	for i := start; i < len(p.images); i++ {
 		if p.images[i] != nil {
-			p.mainBar.Increment()
+			p.images[i].Status = StatusSkipped
+			if p.homebrew != nil {
+				p.homebrew.SkipTask(i)
+			}
 		}
 	}
 }
 
 // AbortWorkers aborts all worker bars without printing summary
 func (p *Progress) AbortWorkers() {
-	if p.noOutput {
+	if p.noOutput || p.homebrew == nil {
 		return
 	}
-	// Abort mainBar as well to prevent deadlock
-	p.mainBar.Abort(true)
-	for _, bar := range p.workerBars {
-		bar.Abort(true)
-	}
+	p.homebrew.Stop()
 }
 
 // WaitContainer waits for the mpb render loop to finish
+// This is now equivalent to stopping the HomebrewProgress animation.
 func (p *Progress) WaitContainer() {
-	if p.noOutput {
+	if p.noOutput || p.homebrew == nil {
 		return
 	}
-	p.container.Wait()
+	p.homebrew.Stop()
 }
 
-// Wait waits for the mpb render loop to finish, then prints the summary
+// Wait waits for the display to finish, then prints the summary
 func (p *Progress) Wait() {
-	if p.noOutput {
+	if p.noOutput || p.homebrew == nil {
 		p.printSummary()
 		return
 	}
-	for _, bar := range p.workerBars {
-		bar.Abort(true)
-	}
-	p.container.Wait()
+	p.homebrew.Stop()
 	p.printSummary()
 }
 
@@ -467,11 +420,11 @@ func (p *Progress) printSummary() {
 	}
 }
 
-// LogWriter returns an io.Writer that outputs text above the progress bars.
-// This leverages mpb's built-in io.Writer support on the Progress container.
+// LogWriter returns an io.Writer for logging output.
+// Returns os.Stdout or io.Discard based on noOutput setting.
 func (p *Progress) LogWriter() io.Writer {
 	if p.noOutput {
 		return io.Discard
 	}
-	return p.container
+	return os.Stdout
 }
