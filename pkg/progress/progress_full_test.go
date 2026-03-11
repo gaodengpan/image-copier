@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gaodengpan/image-copier/internal/domain/value_objects"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -282,13 +283,13 @@ func TestProgress_UpdateStage_IndexOutOfBounds(t *testing.T) {
 
 func TestSyncStage_String(t *testing.T) {
 	tests := []struct {
-		stage    SyncStage
+		stage    value_objects.SyncStage
 		expected string
 	}{
-		{SyncStageChecking, "checking"},
-		{SyncStageSyncing, "sync"},
-		{SyncStageDistributing, "dist"},
-		{SyncStage(100), "unknown"},
+		{value_objects.SyncStageChecking, "checking"},
+		{value_objects.SyncStageSyncing, "sync"},
+		{value_objects.SyncStageDistributing, "dist"},
+		{value_objects.SyncStage(100), "unknown"},
 	}
 
 	for _, tt := range tests {
@@ -301,15 +302,15 @@ func TestSyncStage_String(t *testing.T) {
 func TestFormatStageWithTarget(t *testing.T) {
 	tests := []struct {
 		name       string
-		stage      SyncStage
+		stage      value_objects.SyncStage
 		targetName string
 		expected   string
 	}{
-		{"checking stage", SyncStageChecking, "", "checking"},
-		{"syncing stage", SyncStageSyncing, "", "sync"},
-		{"dist stage with target", SyncStageDistributing, "docker", "dist → docker"},
-		{"dist stage with empty target", SyncStageDistributing, "", "dist"},
-		{"dist stage with registry target", SyncStageDistributing, "my-registry", "dist → my-registry"},
+		{"checking stage", value_objects.SyncStageChecking, "", "checking"},
+		{"syncing stage", value_objects.SyncStageSyncing, "", "sync"},
+		{"dist stage with target", value_objects.SyncStageDistributing, "docker", "dist → docker"},
+		{"dist stage with empty target", value_objects.SyncStageDistributing, "", "dist"},
+		{"dist stage with registry target", value_objects.SyncStageDistributing, "my-registry", "dist → my-registry"},
 	}
 
 	for _, tt := range tests {
@@ -323,16 +324,16 @@ func TestFormatStageWithTarget(t *testing.T) {
 func TestProgress_UpdateSyncStage(t *testing.T) {
 	p := NewProgress(3, 2, true, "syncing")
 
-	p.UpdateSyncStage(0, "nginx:latest", SyncStageChecking, "", 0)
-	p.UpdateSyncStage(1, "redis:alpine", SyncStageSyncing, "", 50)
-	p.UpdateSyncStage(2, "busybox:latest", SyncStageDistributing, "docker", 80)
+	p.UpdateSyncStage(0, "nginx:latest", value_objects.SyncStageChecking, "", 0)
+	p.UpdateSyncStage(1, "redis:alpine", value_objects.SyncStageSyncing, "", 50)
+	p.UpdateSyncStage(2, "busybox:latest", value_objects.SyncStageDistributing, "docker", 80)
 }
 
 func TestProgress_UpdateSyncStage_NoOutput(t *testing.T) {
 	p := NewProgress(3, 2, true, "syncing")
 
 	// Should not panic with out of bounds index
-	p.UpdateSyncStage(10, "nginx:latest", SyncStageChecking, "", 0)
+	p.UpdateSyncStage(10, "nginx:latest", value_objects.SyncStageChecking, "", 0)
 }
 
 func TestProgress_ClearWorker(t *testing.T) {

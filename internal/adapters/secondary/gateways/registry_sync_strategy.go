@@ -2,8 +2,6 @@ package gateways
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,6 +10,7 @@ import (
 	"github.com/gaodengpan/image-copier/internal/domain/ports/output"
 	"github.com/gaodengpan/image-copier/internal/domain/validators"
 	"github.com/gaodengpan/image-copier/internal/domain/value_objects"
+	"github.com/gaodengpan/image-copier/internal/shared/auth"
 	"github.com/gaodengpan/image-copier/internal/shared/errors"
 	"github.com/gaodengpan/image-copier/internal/shared/sanitizer"
 )
@@ -40,45 +39,6 @@ func (s *RegistrySyncStrategy) WithSyncOperationTimeout(timeout time.Duration) *
 	return s
 }
 
-// dockerAuthConfig represents Docker config.json format for authentication
-type dockerAuthConfig struct {
-	Auths map[string]dockerAuthEntry `json:"auths"`
-}
-
-type dockerAuthEntry struct {
-	Auth string `json:"auth"`
-}
-
-// createAuthFileForRegistry creates a temporary authentication file for a specific registry
-func createAuthFileForRegistry(username, password string) (string, error) {
-	auth := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
-
-	config := dockerAuthConfig{
-		Auths: map[string]dockerAuthEntry{
-			"": {Auth: auth},
-		},
-	}
-
-	data, err := json.Marshal(config)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal auth config: %w", err)
-	}
-
-	tmpFile, err := os.CreateTemp("", "skopeo-auth-*.json")
-	if err != nil {
-		return "", fmt.Errorf("failed to create temp auth file: %w", err)
-	}
-
-	if _, err := tmpFile.Write(data); err != nil {
-		tmpFile.Close()
-		os.Remove(tmpFile.Name())
-		return "", fmt.Errorf("failed to write auth config: %w", err)
-	}
-	tmpFile.Close()
-
-	return tmpFile.Name(), nil
-}
-
 func (s *RegistrySyncStrategy) SyncFromRegistry(ctx context.Context, opts output.SyncTargetOptions) error {
 	sourceImageID := s.registryClient.BuildDestImageID(output.BuildDestOptions{
 		SourceID:          opts.SourceImageID,
@@ -92,13 +52,14 @@ func (s *RegistrySyncStrategy) SyncFromRegistry(ctx context.Context, opts output
 	defer cancel()
 
 	// Create temp auth files for source and destination
-	srcAuthFile, err := createAuthFileForRegistry(opts.SourceRegistryUsername, opts.SourceRegistryPassword)
+	// Use empty string as registry key to match any registry (skopeo will use the first available auth)
+	srcAuthFile, err := auth.CreateAuthFile("", opts.SourceRegistryUsername, opts.SourceRegistryPassword)
 	if err != nil {
 		return errors.NewRegistryError("SyncFromRegistry", "failed to create source auth file", err)
 	}
 	defer os.Remove(srcAuthFile)
 
-	destAuthFile, err := createAuthFileForRegistry(opts.TargetRegistryUsername, opts.TargetRegistryPassword)
+	destAuthFile, err := auth.CreateAuthFile("", opts.TargetRegistryUsername, opts.TargetRegistryPassword)
 	if err != nil {
 		return errors.NewRegistryError("SyncFromRegistry", "failed to create destination auth file", err)
 	}

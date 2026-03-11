@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/gaodengpan/image-copier/internal/domain/entities"
-	"github.com/gaodengpan/image-copier/pkg/progress"
+	"github.com/gaodengpan/image-copier/internal/domain/value_objects"
 )
 
 // SyncStageCallback 是进度回调函数类型
@@ -13,7 +13,7 @@ import (
 // stage: 当前阶段
 // targetName: 分发目标名称（仅在 dist 阶段使用）
 // percent: 阶段内进度百分比 [0, 100]
-type SyncStageCallback func(imageID string, stage progress.SyncStage, targetName string, percent float64)
+type SyncStageCallback func(imageID string, stage value_objects.SyncStage, targetName string, percent float64)
 
 // TaskCompleteCallback 是任务完成回调函数类型
 // imageID: 镜像标识

@@ -13,6 +13,7 @@ import (
 	"github.com/gaodengpan/image-copier/internal/adapters/secondary/gateways"
 	use_cases "github.com/gaodengpan/image-copier/internal/application/usecases"
 	"github.com/gaodengpan/image-copier/internal/domain/ports/input"
+	"github.com/gaodengpan/image-copier/internal/domain/value_objects"
 	"github.com/gaodengpan/image-copier/internal/infrastructure/config"
 	"github.com/gaodengpan/image-copier/pkg/logformat"
 	"github.com/gaodengpan/image-copier/pkg/progress"
@@ -220,7 +221,7 @@ func executeSyncCommand(
 	}
 
 	// Create progress callback
-	syncInput.ProgressCallback = func(imageID string, stage progress.SyncStage, targetName string, percent float64) {
+	syncInput.ProgressCallback = func(imageID string, stage value_objects.SyncStage, targetName string, percent float64) {
 		if idx, ok := imageMap[imageID]; ok {
 			prog.UpdateSyncStage(idx%syncInput.WorkerCount, imageID, stage, targetName, percent)
 		}

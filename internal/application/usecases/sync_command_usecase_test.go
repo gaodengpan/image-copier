@@ -17,9 +17,9 @@ import (
 
 // syncTestMocks holds all mocks needed for SyncCommandUseCase tests
 type syncTestMocks struct {
-	registryClient *mockRegistryClient
-	githubClient   *mockGitHubClient
-	logger         *mockLogger
+	registryClient *mocks.MockRegistryClient
+	githubClient   *mocks.MockGitHubClient
+	logger         *mocks.MockLogger
 	syncConfig     *mocks.MockSyncConfig
 	targetBuilder  *mocks.MockDistributionTargetBuilder
 	distributor    *mocks.MockMultiTargetDistributor
@@ -27,9 +27,9 @@ type syncTestMocks struct {
 
 func newSyncTestMocks() *syncTestMocks {
 	return &syncTestMocks{
-		registryClient: new(mockRegistryClient),
-		githubClient:   new(mockGitHubClient),
-		logger:         new(mockLogger),
+		registryClient: new(mocks.MockRegistryClient),
+		githubClient:   new(mocks.MockGitHubClient),
+		logger:         new(mocks.MockLogger),
 		syncConfig:     new(mocks.MockSyncConfig),
 		targetBuilder:  new(mocks.MockDistributionTargetBuilder),
 		distributor:    new(mocks.MockMultiTargetDistributor),

@@ -9,8 +9,8 @@ import (
 	"github.com/gaodengpan/image-copier/internal/domain/entities"
 	"github.com/gaodengpan/image-copier/internal/domain/ports/input"
 	"github.com/gaodengpan/image-copier/internal/domain/ports/output"
+	"github.com/gaodengpan/image-copier/internal/domain/value_objects"
 	"github.com/gaodengpan/image-copier/internal/utils/concurrency"
-	"github.com/gaodengpan/image-copier/pkg/progress"
 )
 
 // SyncCommandUseCaseImpl implements the two-phase sync command
@@ -179,7 +179,7 @@ func (uc *SyncCommandUseCaseImpl) diffStagingRegistry(ctx context.Context, tasks
 		func(ctx context.Context, task *entities.SyncTask) (diffResult, error) {
 			// Notify progress: checking stage
 			if in.ProgressCallback != nil {
-				in.ProgressCallback(task.Source, progress.SyncStageChecking, "", 0)
+				in.ProgressCallback(task.Source, value_objects.SyncStageChecking, "", 0)
 			}
 
 			sourceID := uc.imageIDService.NormalizeSourceID(task.Source)
@@ -206,7 +206,7 @@ func (uc *SyncCommandUseCaseImpl) diffStagingRegistry(ctx context.Context, tasks
 
 			// Notify progress: checking complete (100%)
 			if in.ProgressCallback != nil {
-				in.ProgressCallback(task.Source, progress.SyncStageChecking, "", 100)
+				in.ProgressCallback(task.Source, value_objects.SyncStageChecking, "", 100)
 			}
 
 			return diffResult{
@@ -271,7 +271,7 @@ func (uc *SyncCommandUseCaseImpl) syncSingleImageToStaging(ctx context.Context, 
 
 	// Notify progress: sync stage started (0%)
 	if in.ProgressCallback != nil {
-		in.ProgressCallback(task.Source, progress.SyncStageSyncing, "", 0)
+		in.ProgressCallback(task.Source, value_objects.SyncStageSyncing, "", 0)
 	}
 
 	// Trigger GitHub Actions workflow
@@ -284,7 +284,7 @@ func (uc *SyncCommandUseCaseImpl) syncSingleImageToStaging(ctx context.Context, 
 
 	// Notify progress: sync stage in progress (50%)
 	if in.ProgressCallback != nil {
-		in.ProgressCallback(task.Source, progress.SyncStageSyncing, "", 50)
+		in.ProgressCallback(task.Source, value_objects.SyncStageSyncing, "", 50)
 	}
 
 	// Wait for workflow to complete
@@ -295,7 +295,7 @@ func (uc *SyncCommandUseCaseImpl) syncSingleImageToStaging(ctx context.Context, 
 
 	// Notify progress: sync stage complete (100%)
 	if in.ProgressCallback != nil {
-		in.ProgressCallback(task.Source, progress.SyncStageSyncing, "", 100)
+		in.ProgressCallback(task.Source, value_objects.SyncStageSyncing, "", 100)
 	}
 
 	uc.logger.Infof("Successfully synced %s to staging registry", sourceID)
@@ -362,7 +362,7 @@ func (uc *SyncCommandUseCaseImpl) executeDistributePhase(ctx context.Context, ta
 
 		// Notify progress: distribution stage started (0%)
 		if in.ProgressCallback != nil {
-			in.ProgressCallback(t.OriginalSource, progress.SyncStageDistributing, "", 0)
+			in.ProgressCallback(t.OriginalSource, value_objects.SyncStageDistributing, "", 0)
 		}
 
 		// Use distributor to distribute to all targets
@@ -392,7 +392,7 @@ func (uc *SyncCommandUseCaseImpl) executeDistributePhase(ctx context.Context, ta
 			// Notify progress for each target with cumulative percentage
 			if in.ProgressCallback != nil {
 				percent := float64(i+1) * 100.0 / float64(totalTargets)
-				in.ProgressCallback(t.OriginalSource, progress.SyncStageDistributing, r.TargetName, percent)
+				in.ProgressCallback(t.OriginalSource, value_objects.SyncStageDistributing, r.TargetName, percent)
 			}
 		}
 

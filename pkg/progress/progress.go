@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gaodengpan/image-copier/internal/domain/value_objects"
 	"github.com/vbauerster/mpb/v8"
 	"github.com/vbauerster/mpb/v8/decor"
 	"golang.org/x/term"
@@ -17,38 +18,16 @@ import (
 
 // StageInfo holds the display information for a worker's current stage.
 type StageInfo struct {
-	Label     string    // 镜像名称
-	StageName string    // 阶段显示名称，如 "workflow running"
-	Percent   float64   // 子进度百分比 [0, 100]
-	StartAt   time.Time // 镜像开始处理时间
-}
-
-// SyncStage 定义 sync 命令的阶段
-type SyncStage int
-
-const (
-	SyncStageChecking     SyncStage = iota // 检查镜像存在性
-	SyncStageSyncing                       // 同步到中转仓库
-	SyncStageDistributing                  // 分发到目标
-)
-
-// String 返回阶段的显示名称
-func (s SyncStage) String() string {
-	switch s {
-	case SyncStageChecking:
-		return "checking"
-	case SyncStageSyncing:
-		return "sync"
-	case SyncStageDistributing:
-		return "dist"
-	default:
-		return "unknown"
-	}
+	Label     string                  // 镜像名称
+	StageName string                  // 阶段显示名称，如 "workflow running"
+	Percent   float64                 // 子进度百分比 [0, 100]
+	StartAt   time.Time               // 镜像开始处理时间
+	Stage     value_objects.SyncStage // 当前阶段
 }
 
 // FormatStageWithTarget 格式化阶段名称，用于分发阶段显示目标名
-func FormatStageWithTarget(stage SyncStage, targetName string) string {
-	if stage == SyncStageDistributing && targetName != "" {
+func FormatStageWithTarget(stage value_objects.SyncStage, targetName string) string {
+	if stage == value_objects.SyncStageDistributing && targetName != "" {
 		return "dist → " + targetName
 	}
 	return stage.String()
@@ -271,7 +250,7 @@ func (p *Progress) UpdateStage(workerIdx int, info StageInfo) {
 // stage: 当前阶段 (checking/sync/dist)
 // targetName: 分发目标名称（仅在 dist 阶段使用）
 // percent: 阶段内进度百分比 [0, 100]
-func (p *Progress) UpdateSyncStage(workerIdx int, imageName string, stage SyncStage, targetName string, percent float64) {
+func (p *Progress) UpdateSyncStage(workerIdx int, imageName string, stage value_objects.SyncStage, targetName string, percent float64) {
 	if p.noOutput || workerIdx >= len(p.workerTexts) {
 		return
 	}

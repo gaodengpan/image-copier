@@ -10,6 +10,107 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+// MockRegistryClient implements output.RegistryClient for testing
+type MockRegistryClient struct {
+	mock.Mock
+}
+
+func (m *MockRegistryClient) ImageExists(ctx context.Context, opts output.RegistryAuthOptions) (bool, error) {
+	args := m.Called(ctx, opts)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockRegistryClient) SaveImageToFile(ctx context.Context, opts output.RegistrySaveOptions) error {
+	args := m.Called(ctx, opts)
+	return args.Error(0)
+}
+
+func (m *MockRegistryClient) SaveImageToWriter(ctx context.Context, opts output.RegistrySaveOptions) error {
+	args := m.Called(ctx, opts)
+	return args.Error(0)
+}
+
+func (m *MockRegistryClient) CheckImageExists(ctx context.Context, opts output.RegistryAuthOptions) (bool, error) {
+	args := m.Called(ctx, opts)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockRegistryClient) BuildDestImageID(opts output.BuildDestOptions) string {
+	args := m.Called(opts)
+	return args.String(0)
+}
+
+var _ output.RegistryClient = (*MockRegistryClient)(nil)
+
+// MockGitHubClient implements output.GitHubClientWithRetry for testing
+type MockGitHubClient struct {
+	mock.Mock
+}
+
+func (m *MockGitHubClient) TriggerWorkflow(ctx context.Context, owner, repo, workflowID string, inputs map[string]string) (string, error) {
+	args := m.Called(ctx, owner, repo, workflowID, inputs)
+	return args.String(0), args.Error(1)
+}
+
+func (m *MockGitHubClient) GetWorkflowStatus(ctx context.Context, owner, repo, runID string) (string, error) {
+	args := m.Called(ctx, owner, repo, runID)
+	return args.String(0), args.Error(1)
+}
+
+func (m *MockGitHubClient) WaitForWorkflow(ctx context.Context, owner, repo, runID string) error {
+	args := m.Called(ctx, owner, repo, runID)
+	return args.Error(0)
+}
+
+func (m *MockGitHubClient) FindWorkflowRunID(ctx context.Context, owner, repo, workflowID, sourceID, destImageID, suffix string) (string, error) {
+	args := m.Called(ctx, owner, repo, workflowID, sourceID, destImageID, suffix)
+	return args.String(0), args.Error(1)
+}
+
+func (m *MockGitHubClient) TriggerWorkflowWithRetry(ctx context.Context, imageID, destImageID, arch, osType string) (string, error) {
+	args := m.Called(ctx, imageID, destImageID, arch, osType)
+	return args.String(0), args.Error(1)
+}
+
+func (m *MockGitHubClient) WaitForWorkflowSimple(ctx context.Context, runID string) error {
+	args := m.Called(ctx, runID)
+	return args.Error(0)
+}
+
+var _ output.GitHubClientWithRetry = (*MockGitHubClient)(nil)
+
+// MockLogger implements output.Logger for testing
+// This is a simple mock that ignores all log calls for convenience in tests.
+type MockLogger struct {
+	mock.Mock
+}
+
+func (m *MockLogger) Infof(format string, args ...interface{}) {
+	// Ignore log calls in tests - no need to set expectations
+}
+
+func (m *MockLogger) Debugf(format string, args ...interface{}) {
+	// Ignore log calls in tests - no need to set expectations
+}
+
+func (m *MockLogger) Errorf(format string, args ...interface{}) {
+	// Ignore log calls in tests - no need to set expectations
+}
+
+func (m *MockLogger) Info(args ...interface{}) {
+	// Ignore log calls in tests - no need to set expectations
+}
+
+func (m *MockLogger) Warn(args ...interface{}) {
+	// Ignore log calls in tests - no need to set expectations
+}
+
+func (m *MockLogger) Error(args ...interface{}) {
+	// Ignore log calls in tests - no need to set expectations
+}
+
+var _ output.Logger = (*MockLogger)(nil)
+
 type MockSystemClient struct {
 	mock.Mock
 }

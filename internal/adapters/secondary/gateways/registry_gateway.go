@@ -2,8 +2,6 @@ package gateways
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,6 +11,7 @@ import (
 	"github.com/gaodengpan/image-copier/internal/domain/ports/output"
 	"github.com/gaodengpan/image-copier/internal/domain/services"
 	"github.com/gaodengpan/image-copier/internal/domain/validators"
+	"github.com/gaodengpan/image-copier/internal/shared/auth"
 	"github.com/gaodengpan/image-copier/internal/shared/errors"
 	"github.com/gaodengpan/image-copier/internal/shared/sanitizer"
 )
@@ -59,57 +58,6 @@ func (a *SkopeoAdapter) WithImageCheckTimeout(timeout time.Duration) *SkopeoAdap
 	return a
 }
 
-// dockerConfig represents Docker config.json format for authentication
-type dockerConfig struct {
-	Auths map[string]dockerAuth `json:"auths"`
-}
-
-type dockerAuth struct {
-	Auth string `json:"auth"`
-}
-
-// createAuthFile creates a temporary authentication file for skopeo
-// and returns the file path. Caller is responsible for deleting the file.
-// The registry parameter specifies which registry the credentials apply to.
-func createAuthFile(registry, username, password string) (string, error) {
-	// Create auth entry (base64 encoded username:password)
-	auth := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
-
-	config := dockerConfig{
-		Auths: map[string]dockerAuth{
-			registry: {Auth: auth},
-		},
-	}
-
-	data, err := json.Marshal(config)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal auth config: %w", err)
-	}
-
-	// Create temp file
-	tmpFile, err := os.CreateTemp("", "skopeo-auth-*.json")
-	if err != nil {
-		return "", fmt.Errorf("failed to create temp auth file: %w", err)
-	}
-
-	// Set restrictive permissions before writing credentials
-	// 0600 = only owner can read/write
-	if err := tmpFile.Chmod(0600); err != nil {
-		tmpFile.Close()
-		os.Remove(tmpFile.Name())
-		return "", fmt.Errorf("failed to set auth file permissions: %w", err)
-	}
-
-	if _, err := tmpFile.Write(data); err != nil {
-		tmpFile.Close()
-		os.Remove(tmpFile.Name())
-		return "", fmt.Errorf("failed to write auth config: %w", err)
-	}
-	tmpFile.Close()
-
-	return tmpFile.Name(), nil
-}
-
 // buildSkopeoCmdWithAuth creates a skopeo command using auth file instead of command line credentials
 func (a *SkopeoAdapter) buildSkopeoCmdWithAuth(ctx context.Context, authFile string, args ...string) *exec.Cmd {
 	cmd := a.commandRunner(ctx, SkopeoCommand, args...)
@@ -135,7 +83,7 @@ func (a *SkopeoAdapter) ImageExists(ctx context.Context, opts output.RegistryAut
 	registry := extractRegistry(opts.ImageID)
 
 	// Create temp auth file
-	authFile, err := createAuthFile(registry, opts.Username, opts.Password)
+	authFile, err := auth.CreateAuthFile(registry, opts.Username, opts.Password)
 	if err != nil {
 		return false, errors.NewRegistryError("ImageExists", "failed to create auth file", err)
 	}
@@ -173,7 +121,7 @@ func (a *SkopeoAdapter) SaveImageToFile(ctx context.Context, opts output.Registr
 	registry := extractRegistry(opts.ImageID)
 
 	// Create temp auth file
-	authFile, err := createAuthFile(registry, opts.Username, opts.Password)
+	authFile, err := auth.CreateAuthFile(registry, opts.Username, opts.Password)
 	if err != nil {
 		return errors.NewRegistryError("SaveImageToFile", "failed to create auth file", err)
 	}
@@ -203,7 +151,7 @@ func (a *SkopeoAdapter) CheckImageExists(ctx context.Context, opts output.Regist
 	registry := extractRegistry(opts.ImageID)
 
 	// Create temp auth file
-	authFile, err := createAuthFile(registry, opts.Username, opts.Password)
+	authFile, err := auth.CreateAuthFile(registry, opts.Username, opts.Password)
 	if err != nil {
 		return false, errors.NewRegistryError("CheckImageExists", "failed to create auth file", err)
 	}
@@ -247,7 +195,7 @@ func (a *SkopeoAdapter) SaveImageToWriter(ctx context.Context, opts output.Regis
 	registry := extractRegistry(opts.ImageID)
 
 	// Create temp auth file
-	authFile, err := createAuthFile(registry, opts.Username, opts.Password)
+	authFile, err := auth.CreateAuthFile(registry, opts.Username, opts.Password)
 	if err != nil {
 		return errors.NewRegistryError("SaveImageToWriter", "failed to create auth file", err)
 	}
