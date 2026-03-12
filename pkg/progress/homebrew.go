@@ -146,9 +146,59 @@ func (p *HomebrewProgress) animate() {
 	for {
 		select {
 		case <-p.stopChan:
+			p.renderFinal()
 			return
 		case <-ticker.C:
 			p.render()
+		}
+	}
+}
+
+// renderFinal draws the final state when animation stops
+func (p *HomebrewProgress) renderFinal() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// Clear previous lines
+	for range p.tasks {
+		fmt.Fprint(p.output, "\033[1A\033[K")
+	}
+
+	// Render each task line with final state
+	for _, task := range p.tasks {
+		if task == nil {
+			continue
+		}
+
+		var line string
+		switch task.Status {
+		case TaskPending:
+			if task.ImageName != "" {
+				line = fmt.Sprintf("  ◦ %s (pending)", task.ImageName)
+			}
+		case TaskRunning:
+			// Task still running at stop time - show current state
+			elapsed := time.Since(task.StartTime).Truncate(time.Second)
+			if task.Stage != "" {
+				line = fmt.Sprintf("  %s %s %s (%s)", p.currentSpinner(), task.ImageName, task.Stage, elapsed)
+			} else {
+				line = fmt.Sprintf("  %s %s (%s)", p.currentSpinner(), task.ImageName, elapsed)
+			}
+		case TaskCompleted:
+			duration := task.EndTime.Sub(task.StartTime).Truncate(time.Second)
+			line = fmt.Sprintf("  ✓ %s (%s)", task.ImageName, formatDurationHomebrew(duration))
+		case TaskFailed:
+			duration := task.EndTime.Sub(task.StartTime).Truncate(time.Second)
+			line = fmt.Sprintf("  ✗ %s (%s)", task.ImageName, formatDurationHomebrew(duration))
+			if task.Error != nil {
+				line += fmt.Sprintf(": %v", task.Error)
+			}
+		case TaskSkipped:
+			line = fmt.Sprintf("  ◦ %s", task.ImageName)
+		}
+
+		if line != "" {
+			fmt.Fprintln(p.output, line)
 		}
 	}
 }
@@ -178,19 +228,16 @@ func (p *HomebrewProgress) render() {
 		case TaskRunning:
 			elapsed := time.Since(task.StartTime).Truncate(time.Second)
 			if task.Stage != "" {
-				line = fmt.Sprintf("  %s %s %s...", p.currentSpinner(), task.ImageName, task.Stage)
-			} else {
-				line = fmt.Sprintf("  %s %s...", p.currentSpinner(), task.ImageName)
-			}
-			if elapsed > 0 && task.Stage != "" {
 				line = fmt.Sprintf("  %s %s %s (%s)", p.currentSpinner(), task.ImageName, task.Stage, elapsed)
+			} else {
+				line = fmt.Sprintf("  %s %s (%s)", p.currentSpinner(), task.ImageName, elapsed)
 			}
 		case TaskCompleted:
-			elapsed := time.Since(task.StartTime).Truncate(time.Second)
-			line = fmt.Sprintf("  ✓ %s (%s)", task.ImageName, formatDurationHomebrew(elapsed))
+			duration := task.EndTime.Sub(task.StartTime).Truncate(time.Second)
+			line = fmt.Sprintf("  ✓ %s (%s)", task.ImageName, formatDurationHomebrew(duration))
 		case TaskFailed:
-			elapsed := time.Since(task.StartTime).Truncate(time.Second)
-			line = fmt.Sprintf("  ✗ %s (%s)", task.ImageName, formatDurationHomebrew(elapsed))
+			duration := task.EndTime.Sub(task.StartTime).Truncate(time.Second)
+			line = fmt.Sprintf("  ✗ %s (%s)", task.ImageName, formatDurationHomebrew(duration))
 			if task.Error != nil {
 				line += fmt.Sprintf(": %v", task.Error)
 			}
