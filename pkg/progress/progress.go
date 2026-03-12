@@ -322,11 +322,10 @@ func (p *Progress) WaitContainer() {
 
 // Wait waits for the display to finish, then prints the summary
 func (p *Progress) Wait() {
-	if p.noOutput || p.homebrew == nil {
-		p.printSummary()
-		return
+	// Always stop homebrew to render final state
+	if p.homebrew != nil {
+		p.homebrew.Stop()
 	}
-	p.homebrew.Stop()
 	p.printSummary()
 }
 

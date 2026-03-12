@@ -71,23 +71,17 @@ type HomebrewProgress struct {
 func NewHomebrewProgress(total int, noOutput bool) *HomebrewProgress {
 	isTerm := term.IsTerminal(int(os.Stdout.Fd()))
 
-	// Disable animation in non-TTY or noOutput mode
-	if noOutput || !isTerm {
-		return &HomebrewProgress{
-			tasks:     make([]*TaskLine, total),
-			noOutput:  true,
-			startTime: time.Now(),
-		}
-	}
-
 	p := &HomebrewProgress{
 		tasks:      make([]*TaskLine, total),
 		interval:   100 * time.Millisecond,
 		output:     os.Stdout,
-		isTerminal: true,
-		noOutput:   false,
+		isTerminal: isTerm && !noOutput,
+		noOutput:   noOutput || !isTerm,
 		startTime:  time.Now(),
-		stopChan:   make(chan struct{}),
+	}
+
+	if !p.noOutput {
+		p.stopChan = make(chan struct{})
 	}
 
 	for i := range total {
@@ -126,8 +120,14 @@ func (p *HomebrewProgress) Start() {
 	go p.animate()
 }
 
-// Stop stops the progress display animation
+// Stop stops the progress display animation and renders final state
 func (p *HomebrewProgress) Stop() {
+	// Always render final state if we have tasks
+	if len(p.tasks) > 0 {
+		p.renderFinal()
+	}
+
+	// Stop animation if running
 	if p.noOutput || p.stopChan == nil {
 		return
 	}
@@ -159,9 +159,11 @@ func (p *HomebrewProgress) renderFinal() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	// Clear previous lines
-	for range p.tasks {
-		fmt.Fprint(p.output, "\033[1A\033[K")
+	// Clear previous lines only in TTY mode (animation was running)
+	if p.isTerminal {
+		for range p.tasks {
+			fmt.Fprint(p.output, "\033[1A\033[K")
+		}
 	}
 
 	// Render each task line with final state
@@ -185,11 +187,9 @@ func (p *HomebrewProgress) renderFinal() {
 				line = fmt.Sprintf("  %s %s (%s)", p.currentSpinner(), task.ImageName, elapsed)
 			}
 		case TaskCompleted:
-			duration := task.EndTime.Sub(task.StartTime).Truncate(time.Second)
-			line = fmt.Sprintf("  ✓ %s (%s)", task.ImageName, formatDurationHomebrew(duration))
+			line = fmt.Sprintf("  ✓ %s (%s)", task.ImageName, p.calculateDuration(task))
 		case TaskFailed:
-			duration := task.EndTime.Sub(task.StartTime).Truncate(time.Second)
-			line = fmt.Sprintf("  ✗ %s (%s)", task.ImageName, formatDurationHomebrew(duration))
+			line = fmt.Sprintf("  ✗ %s (%s)", task.ImageName, p.calculateDuration(task))
 			if task.Error != nil {
 				line += fmt.Sprintf(": %v", task.Error)
 			}
@@ -201,6 +201,20 @@ func (p *HomebrewProgress) renderFinal() {
 			fmt.Fprintln(p.output, line)
 		}
 	}
+}
+
+// calculateDuration returns the duration string for a task
+func (p *HomebrewProgress) calculateDuration(task *TaskLine) string {
+	if task.StartTime.IsZero() {
+		return "<1s"
+	}
+	var duration time.Duration
+	if task.EndTime.IsZero() {
+		duration = time.Since(task.StartTime).Truncate(time.Second)
+	} else {
+		duration = task.EndTime.Sub(task.StartTime).Truncate(time.Second)
+	}
+	return formatDurationHomebrew(duration)
 }
 
 // render draws the current state to the terminal
@@ -233,11 +247,9 @@ func (p *HomebrewProgress) render() {
 				line = fmt.Sprintf("  %s %s (%s)", p.currentSpinner(), task.ImageName, elapsed)
 			}
 		case TaskCompleted:
-			duration := task.EndTime.Sub(task.StartTime).Truncate(time.Second)
-			line = fmt.Sprintf("  ✓ %s (%s)", task.ImageName, formatDurationHomebrew(duration))
+			line = fmt.Sprintf("  ✓ %s (%s)", task.ImageName, p.calculateDuration(task))
 		case TaskFailed:
-			duration := task.EndTime.Sub(task.StartTime).Truncate(time.Second)
-			line = fmt.Sprintf("  ✗ %s (%s)", task.ImageName, formatDurationHomebrew(duration))
+			line = fmt.Sprintf("  ✗ %s (%s)", task.ImageName, p.calculateDuration(task))
 			if task.Error != nil {
 				line += fmt.Sprintf(": %v", task.Error)
 			}
