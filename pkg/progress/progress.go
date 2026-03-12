@@ -376,39 +376,13 @@ func (p *Progress) printSummary() {
 
 	totalFailed := failed + cancelled
 
-	if dryRun > 0 {
-		fmt.Printf("\nSummary: %d succeeded, %d skipped, %d dry-run, %d failed | Total: %s\n",
-			succeeded, skipped, dryRun, totalFailed, formatDuration(totalDuration))
-	} else {
-		fmt.Printf("\nSummary: %d succeeded, %d skipped, %d failed | Total: %s\n",
+	fmt.Printf("\n==> Summary\n")
+	if totalFailed > 0 {
+		fmt.Printf("✓ %d succeeded, %d skipped, %d failed in %s\n",
 			succeeded, skipped, totalFailed, formatDuration(totalDuration))
-	}
-
-	for _, img := range p.images {
-		if img == nil {
-			continue
-		}
-		dur := formatDuration(img.Duration)
-		switch img.Status {
-		case StatusCompleted:
-			fmt.Printf("  ✓ %s (%s)\n", img.Image, dur)
-		case StatusSkipped:
-			fmt.Printf("  ◦ %s (%s)\n", img.Image, dur)
-		case StatusDryRun:
-			fmt.Printf("  ~ %s (%s)\n", img.Image, dur)
-		case StatusFailed:
-			msg := fmt.Sprintf("  ✗ %s (%s)", img.Image, dur)
-			if img.Error != nil {
-				msg += fmt.Sprintf(": %v", img.Error)
-			}
-			fmt.Println(msg)
-		case StatusCancelled:
-			msg := fmt.Sprintf("  ⊘ %s (%s)", img.Image, dur)
-			if img.Error != nil {
-				msg += fmt.Sprintf(": %v", img.Error)
-			}
-			fmt.Println(msg)
-		}
+	} else {
+		fmt.Printf("✓ %d succeeded, %d skipped in %s\n",
+			succeeded, skipped, formatDuration(totalDuration))
 	}
 }
 

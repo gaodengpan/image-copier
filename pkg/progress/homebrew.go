@@ -178,12 +178,12 @@ func (p *HomebrewProgress) render() {
 		case TaskRunning:
 			elapsed := time.Since(task.StartTime).Truncate(time.Second)
 			if task.Stage != "" {
-				line = fmt.Sprintf("  %s %s %s...", p.currentSpinner(), task.Stage, task.ImageName)
+				line = fmt.Sprintf("  %s %s %s...", p.currentSpinner(), task.ImageName, task.Stage)
 			} else {
 				line = fmt.Sprintf("  %s %s...", p.currentSpinner(), task.ImageName)
 			}
-			if elapsed > 0 {
-				line = fmt.Sprintf("  %s %s %s (%s)", p.currentSpinner(), task.Stage, task.ImageName, elapsed)
+			if elapsed > 0 && task.Stage != "" {
+				line = fmt.Sprintf("  %s %s %s (%s)", p.currentSpinner(), task.ImageName, task.Stage, elapsed)
 			}
 		case TaskCompleted:
 			elapsed := time.Since(task.StartTime).Truncate(time.Second)
