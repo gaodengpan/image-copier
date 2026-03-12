@@ -4,9 +4,9 @@ package value_objects
 type SyncStage int
 
 const (
-	SyncStageChecking SyncStage = iota // 检查镜像存在性
-	SyncStageSyncing                   // 同步到中转仓库
-	SyncStageDistributing              // 分发到目标
+	SyncStageChecking     SyncStage = iota // 检查镜像存在性
+	SyncStageSyncing                       // 同步到中转仓库
+	SyncStageDistributing                  // 分发到目标
 )
 
 // String 返回阶段的显示名称
