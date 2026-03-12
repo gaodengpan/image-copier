@@ -12,13 +12,21 @@ image-copier 是一个通过 GitHub Actions 中转拉取海外 Docker 镜像到�
 
 ```bash
 make build              # 构建
-make test               # 测试（全部）
+make test               # 测试（本地开发）
+make test-ci            # CI 模式测试（含 race 检测 + 覆盖率）
 make test-coverage      # 测试 + 覆盖率
 go test -v ./path/to/pkg -run TestName   # 单个测试
 make fmt                # 格式化
 make vet                # go vet
-make check-quality      # 全量检查
+make lint               # golangci-lint 检查
+make check-quality      # 全量检查（CI 前必跑）
 ```
+
+**重要**：提交代码前必须运行 `make check-quality`，它会执行：
+1. `gofmt` + `goimports` 格式化
+2. `go vet` 静态检查
+3. `golangci-lint` 代码质量检查
+4. `-race` 竞态条件检测
 
 ## 架构原则
 
@@ -97,6 +105,8 @@ pkg/                          # 可复用公共包
 - 文件：`<name>_test.go`
 - 断言：`testify/assert` + `testify/require`
 - Mock：位于 `internal/application/usecases/mocks/`
+- **提交前检查**：`make check-quality` 必须通过
+- **CI 环境**：使用 `make test-ci`，包含 `-race` 竞态检测
 
 ### Git 提交
 - 格式：conventional commits（`feat:`, `fix:`, `docs:`）

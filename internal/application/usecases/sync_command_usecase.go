@@ -243,7 +243,7 @@ func (uc *SyncCommandUseCaseImpl) syncToStaging(ctx context.Context, tasks []*en
 		if err := uc.syncSingleImageToStaging(ctx, task, in); err != nil {
 			mu.Lock()
 			// Add to Failed list
-			task.Fail(err)
+			_ = task.Fail(err)
 			result.Failed = append(result.Failed, task)
 			result.Errors = append(result.Errors, fmt.Errorf("failed to sync %s: %w", task.Source, err))
 			mu.Unlock()
@@ -425,7 +425,9 @@ func (uc *SyncCommandUseCaseImpl) executeDistributePhase(ctx context.Context, ta
 			taskErr = fmt.Errorf("distribution completed with errors")
 			t.Fail(taskErr)
 		} else {
-			t.Complete()
+			if completeErr := t.Complete(); completeErr != nil {
+				uc.logger.Warn("Failed to mark task as complete: ", completeErr)
+			}
 		}
 
 		// Notify task complete

@@ -161,7 +161,7 @@ func TestWorkerPool(t *testing.T) {
 
 		for i := 0; i < 10; i++ {
 			go func() {
-				pool.Execute(func() error {
+				_ = pool.Execute(func() error {
 					cur := atomic.AddInt32(&currentConcurrent, 1)
 					defer atomic.AddInt32(&currentConcurrent, -1)
 

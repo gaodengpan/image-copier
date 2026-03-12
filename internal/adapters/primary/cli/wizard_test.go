@@ -90,9 +90,15 @@ func TestMaskToken(t *testing.T) {
 }
 
 func TestLoadConfig_WithEncryption(t *testing.T) {
+	// Set required environment variables for config validation
+	t.Setenv("GITHUB_OWNER", "test-owner")
+	t.Setenv("GITHUB_REPO", "test-repo")
+	t.Setenv("GITHUB_TOKEN", "test-token")
+
 	provider := config.DefaultConfigProvider()
 	cfg, err := provider.Load()
 	require.NoError(t, err)
 
 	assert.NotNil(t, cfg.Github)
+	assert.Equal(t, "test-owner", cfg.Github.Owner)
 }

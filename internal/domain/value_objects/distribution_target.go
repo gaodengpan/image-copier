@@ -1,8 +1,6 @@
 package value_objects
 
 import (
-	"fmt"
-
 	sharederrors "github.com/gaodengpan/image-copier/internal/shared/errors"
 )
 
@@ -76,7 +74,7 @@ func (t *DistributionTarget) Password() string {
 // String returns a string representation of the target
 func (t *DistributionTarget) String() string {
 	if t.typ == TargetTypeDocker {
-		return fmt.Sprintf("docker (local)")
+		return "docker (local)"
 	}
-	return fmt.Sprintf("%s (%s)", t.name, t.host)
+	return t.name + " (" + t.host + ")"
 }

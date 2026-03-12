@@ -15,6 +15,10 @@ build: ## Build the binary
 test: ## Run all tests
 	go test -v ./...
 
+test-ci: ## Run tests with race detection (CI mode)
+	go test -v -race -coverprofile=coverage.out ./...
+	go tool cover -func=coverage.out | grep total
+
 test-coverage: ## Run tests with coverage report
 	go test -coverprofile=coverage.out ./...
 	go tool cover -func=coverage.out | grep total
@@ -47,7 +51,7 @@ vet: ## Run go vet on the code
 lint: ## Run golangci-lint (requires installation: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
 	golangci-lint run
 
-check-quality: fmt vet lint test-coverage ## Run comprehensive quality checks (formatting, vet, lint, and test coverage)
+check-quality: fmt vet lint test-ci ## Run comprehensive quality checks (formatting, vet, lint, and tests with race detection)
 
 help: ## Display this help screen
 	@grep -h -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
