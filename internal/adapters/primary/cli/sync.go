@@ -228,10 +228,12 @@ func executeSyncCommand(
 	}
 
 	// Create task complete callback for incrementing main progress bar
-	syncInput.TaskComplete = func(imageID string, err error) {
+	syncInput.TaskComplete = func(imageID string, skipped bool, err error) {
 		if idx, ok := imageMap[imageID]; ok {
 			if err != nil {
 				prog.UpdateStatus(idx, progress.StatusFailed, err)
+			} else if skipped {
+				prog.UpdateStatus(idx, progress.StatusSkipped, nil)
 			} else {
 				prog.UpdateStatus(idx, progress.StatusCompleted, nil)
 			}
@@ -302,7 +304,8 @@ func executeSyncCommand(
 		Duration:    result.Duration,
 	}
 	if result.SyncPhase != nil {
-		summary.SyncSuccess = len(result.SyncPhase.AlreadyExisted) + len(result.SyncPhase.NewlySynced)
+		summary.SyncSuccess = len(result.SyncPhase.NewlySynced)
+		summary.SyncSkipped = len(result.SyncPhase.AlreadyExisted)
 		summary.SyncFailed = len(result.SyncPhase.Failed)
 	}
 	if result.DistributePhase != nil {
@@ -345,6 +348,7 @@ type SyncPresenter interface {
 type SyncSummary struct {
 	TotalImages int
 	SyncSuccess int
+	SyncSkipped int
 	SyncFailed  int
 	DistSuccess int
 	DistSkipped int

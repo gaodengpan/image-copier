@@ -17,8 +17,9 @@ type SyncStageCallback func(imageID string, stage value_objects.SyncStage, targe
 
 // TaskCompleteCallback 是任务完成回调函数类型
 // imageID: 镜像标识
+// skipped: 是否跳过（镜像已存在）
 // err: 错误信息（nil 表示成功）
-type TaskCompleteCallback func(imageID string, err error)
+type TaskCompleteCallback func(imageID string, skipped bool, err error)
 
 // SyncCommandInput represents the input for the sync command
 type SyncCommandInput struct {

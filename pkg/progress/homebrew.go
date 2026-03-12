@@ -122,13 +122,18 @@ func (p *HomebrewProgress) Start() {
 
 // Stop stops the progress display animation and renders final state
 func (p *HomebrewProgress) Stop() {
+	// Skip all output in noOutput mode (e.g., JSON output)
+	if p.noOutput {
+		return
+	}
+
 	// Always render final state if we have tasks
 	if len(p.tasks) > 0 {
 		p.renderFinal()
 	}
 
 	// Stop animation if running
-	if p.noOutput || p.stopChan == nil {
+	if p.stopChan == nil {
 		return
 	}
 

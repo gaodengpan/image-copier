@@ -304,6 +304,55 @@ func TestSyncCommandUseCase_Execute_CheckError(t *testing.T) {
 	assert.Len(t, result.SyncPhase.Errors, 1)
 }
 
+func TestSyncCommandUseCase_Execute_SyncFailedWithNoTargets(t *testing.T) {
+	m := newSyncTestMocks()
+	setupBasicSyncExpectations(m)
+
+	// Setup: image does not exist and sync will fail
+	m.registryClient.On("CheckImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(false, nil)
+	m.githubClient.On("TriggerWorkflowWithRetry", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return("run-123", nil)
+	m.githubClient.On("WaitForWorkflowSimple", mock.Anything, "run-123").
+		Return(errors.New("workflow failed"))
+
+	// Setup: no distribution targets
+	m.syncConfig.On("GetDistributionTargets", mock.Anything).Return([]string{})
+
+	uc := newSyncTestUseCase(m)
+
+	// Track TaskComplete callback invocations
+	var taskCompleteCalls []struct {
+		imageID string
+		skipped bool
+		err     error
+	}
+	testInput := input.SyncCommandInput{
+		Images:         []string{"nginx:latest"},
+		DryRun:         false,
+		Force:          false,
+		WorkerCount:    1,
+		SkipDistribute: false,
+		TaskComplete: func(imageID string, skipped bool, err error) {
+			taskCompleteCalls = append(taskCompleteCalls, struct {
+				imageID string
+				skipped bool
+				err     error
+			}{imageID, skipped, err})
+		},
+	}
+
+	result, err := uc.Execute(context.Background(), testInput)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Len(t, result.SyncPhase.Failed, 1, "Sync should have 1 failed task")
+	// Verify TaskComplete was called for the failed sync task
+	assert.Len(t, taskCompleteCalls, 1, "TaskComplete should be called for failed sync task")
+	assert.Equal(t, "nginx:latest", taskCompleteCalls[0].imageID)
+	assert.NotNil(t, taskCompleteCalls[0].err, "TaskComplete should receive error")
+}
+
 func TestSyncCommandUseCase_Execute_NoDistributionTargets(t *testing.T) {
 	m := newSyncTestMocks()
 	setupBasicSyncExpectations(m)
@@ -317,10 +366,15 @@ func TestSyncCommandUseCase_Execute_NoDistributionTargets(t *testing.T) {
 
 	uc := newSyncTestUseCase(m)
 
+	// Track TaskComplete callback invocations
+	var taskCompleteCalls []string
 	testInput := input.SyncCommandInput{
 		Images:      []string{"nginx:latest"},
 		WorkerCount: 1,
 		Targets:     []string{},
+		TaskComplete: func(imageID string, skipped bool, err error) {
+			taskCompleteCalls = append(taskCompleteCalls, imageID)
+		},
 	}
 
 	result, err := uc.Execute(context.Background(), testInput)
@@ -328,6 +382,9 @@ func TestSyncCommandUseCase_Execute_NoDistributionTargets(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.Equal(t, 0, result.DistributePhase.SuccessCount)
+	// Verify TaskComplete was called even when no distribution targets
+	assert.Len(t, taskCompleteCalls, 1, "TaskComplete should be called even when no distribution targets")
+	assert.Equal(t, "nginx:latest", taskCompleteCalls[0])
 }
 
 func TestSyncCommandUseCase_SyncPhase(t *testing.T) {

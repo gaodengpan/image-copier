@@ -72,23 +72,30 @@ func (uc *SyncCommandUseCaseImpl) Execute(ctx context.Context, in input.SyncComm
 	// Phase 2: Distribute to targets
 	if !in.SkipDistribute {
 		// Build distribute tasks from synced images
-		distributeTasks := uc.buildDistributeTasks(result.SyncPhase, in)
-		distributeResult, err := uc.executeDistributePhase(ctx, distributeTasks, in)
+		distributeTasks, skippedInSync := uc.buildDistributeTasks(result.SyncPhase, in)
+		distributeResult, err := uc.executeDistributePhase(ctx, distributeTasks, skippedInSync, in)
 		if err != nil {
 			return nil, err
 		}
 		result.DistributePhase = distributeResult
+
+		// Notify task complete for failed sync tasks (they are not included in distribute tasks)
+		if in.TaskComplete != nil {
+			for _, task := range result.SyncPhase.Failed {
+				in.TaskComplete(task.Source, false, task.Error)
+			}
+		}
 	} else {
 		// When skipping distribute, notify task complete for all sync results
 		if in.TaskComplete != nil {
 			for _, task := range result.SyncPhase.AlreadyExisted {
-				in.TaskComplete(task.Source, nil)
+				in.TaskComplete(task.Source, true, nil) // skipped = true
 			}
 			for _, task := range result.SyncPhase.NewlySynced {
-				in.TaskComplete(task.Source, nil)
+				in.TaskComplete(task.Source, false, nil) // skipped = false
 			}
 			for _, task := range result.SyncPhase.Failed {
-				in.TaskComplete(task.Source, task.Error)
+				in.TaskComplete(task.Source, false, task.Error)
 			}
 		}
 	}
@@ -110,7 +117,8 @@ func (uc *SyncCommandUseCaseImpl) DistributePhase(ctx context.Context, syncedIma
 	for i, imageID := range syncedImages {
 		tasks[i] = entities.NewDistributeTask(imageID, imageID, in.Arch, in.Os, in.Targets)
 	}
-	return uc.executeDistributePhase(ctx, tasks, in)
+	// When running distribute phase alone, all images are considered newly synced (not skipped)
+	return uc.executeDistributePhase(ctx, tasks, make(map[string]bool), in)
 }
 
 // buildSyncTasks builds sync tasks from input
@@ -303,11 +311,18 @@ func (uc *SyncCommandUseCaseImpl) syncSingleImageToStaging(ctx context.Context, 
 }
 
 // buildDistributeTasks builds distribute tasks from sync result
-func (uc *SyncCommandUseCaseImpl) buildDistributeTasks(syncResult *input.SyncPhaseResult, in input.SyncCommandInput) []*entities.DistributeTask {
+// Returns tasks and a set of image sources that were skipped in sync phase
+func (uc *SyncCommandUseCaseImpl) buildDistributeTasks(syncResult *input.SyncPhaseResult, in input.SyncCommandInput) ([]*entities.DistributeTask, map[string]bool) {
 	// Collect all synced image IDs
 	allImages := make([]*entities.SyncTask, 0, len(syncResult.AlreadyExisted)+len(syncResult.NewlySynced))
 	allImages = append(allImages, syncResult.AlreadyExisted...)
 	allImages = append(allImages, syncResult.NewlySynced...)
+
+	// Track which images were skipped in sync phase
+	skippedInSync := make(map[string]bool)
+	for _, task := range syncResult.AlreadyExisted {
+		skippedInSync[task.Source] = true
+	}
 
 	tasks := make([]*entities.DistributeTask, len(allImages))
 	for i, syncTask := range allImages {
@@ -318,16 +333,24 @@ func (uc *SyncCommandUseCaseImpl) buildDistributeTasks(syncResult *input.SyncPha
 		uc.logger.Debugf("Building distribute task: %s -> %s", syncTask.Source, sourceID)
 		tasks[i] = entities.NewDistributeTask(sourceID, syncTask.Source, syncTask.Arch, syncTask.Os, in.Targets)
 	}
-	return tasks
+	return tasks, skippedInSync
 }
 
 // executeDistributePhase executes Phase 2: distribute to targets
 // Uses semaphore to limit concurrent operations to workerCount
-func (uc *SyncCommandUseCaseImpl) executeDistributePhase(ctx context.Context, tasks []*entities.DistributeTask, in input.SyncCommandInput) (*input.DistributePhaseResult, error) {
+func (uc *SyncCommandUseCaseImpl) executeDistributePhase(ctx context.Context, tasks []*entities.DistributeTask, skippedInSync map[string]bool, in input.SyncCommandInput) (*input.DistributePhaseResult, error) {
 	targets := uc.syncConfig.GetDistributionTargets(in.Targets)
 
 	if len(targets) == 0 {
 		uc.logger.Info("No distribution targets specified, skipping distribute phase")
+		// When no distribution targets, notify task complete for all tasks
+		if in.TaskComplete != nil {
+			for _, task := range tasks {
+				// Check if this task was skipped in sync phase
+				wasSkippedInSync := skippedInSync[task.OriginalSource]
+				in.TaskComplete(task.OriginalSource, wasSkippedInSync, nil)
+			}
+		}
 		return &input.DistributePhaseResult{}, nil
 	}
 
@@ -354,7 +377,7 @@ func (uc *SyncCommandUseCaseImpl) executeDistributePhase(ctx context.Context, ta
 			})
 			// Notify task complete with error
 			if in.TaskComplete != nil {
-				in.TaskComplete(t.OriginalSource, err)
+				in.TaskComplete(t.OriginalSource, false, err)
 			}
 			mu.Unlock()
 			return err
@@ -407,7 +430,7 @@ func (uc *SyncCommandUseCaseImpl) executeDistributePhase(ctx context.Context, ta
 
 		// Notify task complete
 		if in.TaskComplete != nil {
-			in.TaskComplete(t.OriginalSource, taskErr)
+			in.TaskComplete(t.OriginalSource, false, taskErr)
 		}
 		mu.Unlock()
 		return nil

@@ -106,6 +106,7 @@ type jsonError struct {
 type jsonSummary struct {
 	TotalImages       int `json:"total_images"`
 	SyncSuccess       int `json:"sync_success"`
+	SyncSkipped       int `json:"sync_skipped"`
 	SyncFailed        int `json:"sync_failed"`
 	DistributeSuccess int `json:"distribute_success"`
 	DistributeSkipped int `json:"distribute_skipped"`
@@ -141,6 +142,7 @@ func (p *SyncJSONPresenter) PresentSummary(summary *SyncSummary) {
 		Summary: jsonSummary{
 			TotalImages:       summary.TotalImages,
 			SyncSuccess:       summary.SyncSuccess,
+			SyncSkipped:       summary.SyncSkipped,
 			SyncFailed:        summary.SyncFailed,
 			DistributeSuccess: summary.DistSuccess,
 			DistributeSkipped: summary.DistSkipped,
@@ -185,12 +187,12 @@ func (p *SyncJSONPresenter) buildImageResults() []jsonImageResult {
 		}
 	}
 
-	// Process synced images (already existed)
+	// Process synced images (already existed - skipped)
 	if p.syncResult != nil {
 		for _, task := range p.syncResult.AlreadyExisted {
 			images = append(images, jsonImageResult{
 				Source:       task.Source,
-				SyncStatus:   "synced",
+				SyncStatus:   "skipped",
 				Distribution: distributeMap[task.Source],
 			})
 		}

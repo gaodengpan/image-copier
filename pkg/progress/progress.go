@@ -348,6 +348,11 @@ func formatDuration(d time.Duration) string {
 
 // printSummary prints the final summary after all processing
 func (p *Progress) printSummary() {
+	// Skip summary output in noOutput mode (e.g., JSON output)
+	if p.noOutput {
+		return
+	}
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
