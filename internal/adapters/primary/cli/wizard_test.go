@@ -94,6 +94,9 @@ func TestLoadConfig_WithEncryption(t *testing.T) {
 	t.Setenv("GITHUB_OWNER", "test-owner")
 	t.Setenv("GITHUB_REPO", "test-repo")
 	t.Setenv("GITHUB_TOKEN", "test-token")
+	t.Setenv("REGISTRY_HOST", "ghcr.io")
+	t.Setenv("REGISTRY_USERNAME", "test-user")
+	t.Setenv("REGISTRY_PASSWD", "test-password")
 
 	provider := config.DefaultConfigProvider()
 	cfg, err := provider.Load()
