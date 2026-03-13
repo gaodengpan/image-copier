@@ -3,6 +3,7 @@ package concurrency
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -158,9 +159,12 @@ func TestWorkerPool(t *testing.T) {
 
 		var maxConcurrent int32
 		var currentConcurrent int32
+		var wg sync.WaitGroup
 
 		for i := 0; i < 10; i++ {
+			wg.Add(1)
 			go func() {
+				defer wg.Done()
 				_ = pool.Execute(func() error {
 					cur := atomic.AddInt32(&currentConcurrent, 1)
 					defer atomic.AddInt32(&currentConcurrent, -1)
@@ -178,8 +182,8 @@ func TestWorkerPool(t *testing.T) {
 			}()
 		}
 
-		// Wait a bit for all goroutines to complete
-		time.Sleep(100 * time.Millisecond)
+		// Wait for all goroutines to complete
+		wg.Wait()
 		assert.LessOrEqual(t, maxConcurrent, int32(3))
 	})
 
