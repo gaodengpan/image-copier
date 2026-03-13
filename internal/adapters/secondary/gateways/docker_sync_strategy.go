@@ -77,27 +77,15 @@ func (s *DockerSyncStrategy) Name() output.SyncTargetType {
 
 // Distribute implements DistributionStrategy interface
 func (s *DockerSyncStrategy) Distribute(ctx context.Context, opts output.DistributionOptions) error {
-	syncOpts := output.SyncTargetOptions{
-		SourceImageID:          opts.SourceImageID,
-		SourceRegistryHost:     opts.SourceRegistryHost,
-		SourceRegistryNS:       opts.SourceRegistryNS,
-		SourceRegistryUsername: opts.SourceRegistryUser,
-		SourceRegistryPassword: opts.SourceRegistryPass,
-		TargetImageTag:         opts.SourceImageID,
-	}
+	syncOpts := opts.ToSyncTargetOptions()
+	syncOpts.TargetImageTag = opts.SourceImageID
 	return s.SyncFromRegistry(ctx, syncOpts)
 }
 
 // ExistsInDistributionTarget checks if the image exists in the distribution target
 // This method implements DistributionStrategy interface
 func (s *DockerSyncStrategy) ExistsInDistributionTarget(ctx context.Context, opts output.DistributionOptions) (bool, error) {
-	syncOpts := output.SyncTargetOptions{
-		SourceImageID:          opts.SourceImageID,
-		SourceRegistryHost:     opts.SourceRegistryHost,
-		SourceRegistryNS:       opts.SourceRegistryNS,
-		SourceRegistryUsername: opts.SourceRegistryUser,
-		SourceRegistryPassword: opts.SourceRegistryPass,
-	}
+	syncOpts := opts.ToSyncTargetOptions()
 	return s.ExistsInTarget(ctx, syncOpts)
 }
 

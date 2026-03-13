@@ -18,7 +18,6 @@ type SyncCommandUseCaseImpl struct {
 	registryClient output.RegistryClient
 	githubClient   output.GitHubClientWithRetry
 	logger         output.Logger
-	imageIDService output.ImageIDService
 	syncConfig     output.SyncConfig
 	targetBuilder  output.DistributionTargetBuilder
 	distributor    output.MultiTargetDistributor
@@ -29,7 +28,6 @@ func NewSyncCommandUseCase(
 	registryClient output.RegistryClient,
 	githubClient output.GitHubClientWithRetry,
 	logger output.Logger,
-	imageIDService output.ImageIDService,
 	syncConfig output.SyncConfig,
 	targetBuilder output.DistributionTargetBuilder,
 	distributor output.MultiTargetDistributor,
@@ -38,7 +36,6 @@ func NewSyncCommandUseCase(
 		registryClient: registryClient,
 		githubClient:   githubClient,
 		logger:         logger,
-		imageIDService: imageIDService,
 		syncConfig:     syncConfig,
 		targetBuilder:  targetBuilder,
 		distributor:    distributor,
@@ -190,7 +187,7 @@ func (uc *SyncCommandUseCaseImpl) diffStagingRegistry(ctx context.Context, tasks
 				in.ProgressCallback(task.Source, value_objects.SyncStageChecking, "", 0)
 			}
 
-			sourceID := uc.imageIDService.NormalizeSourceID(task.Source)
+			sourceID := value_objects.ParseImageID(task.Source).Normalize()
 			destID := uc.registryClient.BuildDestImageID(output.BuildDestOptions{
 				SourceID:          sourceID,
 				RegistryHost:      uc.syncConfig.StagingRegistryHost(),
@@ -198,7 +195,7 @@ func (uc *SyncCommandUseCaseImpl) diffStagingRegistry(ctx context.Context, tasks
 			})
 
 			uc.logger.Debugf("Checking image existence: %s -> %s", sourceID, destID)
-			exists, err := uc.registryClient.CheckImageExists(ctx, output.RegistryAuthOptions{
+			exists, err := uc.registryClient.ImageExists(ctx, output.RegistryAuthOptions{
 				ImageID:  destID,
 				Username: uc.syncConfig.StagingRegistryUsername(),
 				Password: uc.syncConfig.StagingRegistryPassword(),
@@ -261,7 +258,7 @@ func (uc *SyncCommandUseCaseImpl) syncToStaging(ctx context.Context, tasks []*en
 // Note: Image existence is already checked in diffStagingRegistry phase,
 // so we don't need to check again here.
 func (uc *SyncCommandUseCaseImpl) syncSingleImageToStaging(ctx context.Context, task *entities.SyncTask, in input.SyncCommandInput) error {
-	sourceID := uc.imageIDService.NormalizeSourceID(task.Source)
+	sourceID := value_objects.ParseImageID(task.Source).Normalize()
 	destID := uc.registryClient.BuildDestImageID(output.BuildDestOptions{
 		SourceID:          sourceID,
 		RegistryHost:      uc.syncConfig.StagingRegistryHost(),
@@ -328,7 +325,7 @@ func (uc *SyncCommandUseCaseImpl) buildDistributeTasks(syncResult *input.SyncPha
 	for i, syncTask := range allImages {
 		// Use normalized source ID as SourceImageID - the distribution strategies
 		// will build the full staging registry path using BuildDestImageID
-		sourceID := uc.imageIDService.NormalizeSourceID(syncTask.Source)
+		sourceID := value_objects.ParseImageID(syncTask.Source).Normalize()
 
 		uc.logger.Debugf("Building distribute task: %s -> %s", syncTask.Source, sourceID)
 		tasks[i] = entities.NewDistributeTask(sourceID, syncTask.Source, syncTask.Arch, syncTask.Os, in.Targets)

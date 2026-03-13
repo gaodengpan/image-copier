@@ -86,7 +86,7 @@ func (s *RegistrySyncStrategy) SyncFromRegistry(ctx context.Context, opts output
 
 func (s *RegistrySyncStrategy) ExistsInTarget(ctx context.Context, opts output.SyncTargetOptions) (bool, error) {
 	targetImageID := s.buildTargetImageID(opts.TargetRegistryHost, opts.SourceImageID)
-	return s.registryClient.CheckImageExists(ctx, output.RegistryAuthOptions{
+	return s.registryClient.ImageExists(ctx, output.RegistryAuthOptions{
 		ImageID:  targetImageID,
 		Username: opts.TargetRegistryUsername,
 		Password: opts.TargetRegistryPassword,
@@ -99,27 +99,12 @@ func (s *RegistrySyncStrategy) Name() output.SyncTargetType {
 
 // Distribute implements DistributionStrategy interface
 func (s *RegistrySyncStrategy) Distribute(ctx context.Context, opts output.DistributionOptions) error {
-	syncOpts := output.SyncTargetOptions{
-		SourceImageID:          opts.SourceImageID,
-		SourceRegistryHost:     opts.SourceRegistryHost,
-		SourceRegistryNS:       opts.SourceRegistryNS,
-		SourceRegistryUsername: opts.SourceRegistryUser,
-		SourceRegistryPassword: opts.SourceRegistryPass,
-		TargetRegistryHost:     opts.TargetRegistryHost,
-		TargetRegistryUsername: opts.TargetRegistryUser,
-		TargetRegistryPassword: opts.TargetRegistryPass,
-	}
-	return s.SyncFromRegistry(ctx, syncOpts)
+	return s.SyncFromRegistry(ctx, opts.ToSyncTargetOptions())
 }
 
 // ExistsInDistributionTarget checks if the image exists in the distribution target
 func (s *RegistrySyncStrategy) ExistsInDistributionTarget(ctx context.Context, opts output.DistributionOptions) (bool, error) {
-	syncOpts := output.SyncTargetOptions{
-		SourceImageID:          opts.SourceImageID,
-		TargetRegistryHost:     opts.TargetRegistryHost,
-		TargetRegistryUsername: opts.TargetRegistryUser,
-		TargetRegistryPassword: opts.TargetRegistryPass,
-	}
+	syncOpts := opts.ToSyncTargetOptions()
 	return s.ExistsInTarget(ctx, syncOpts)
 }
 

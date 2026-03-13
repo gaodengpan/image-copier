@@ -52,6 +52,5 @@ type RegistryClient interface {
 	SaveImageToFile(ctx context.Context, opts RegistrySaveOptions) error
 	// SaveImageToWriter saves a registry image to a writer (for streaming)
 	SaveImageToWriter(ctx context.Context, opts RegistrySaveOptions) error
-	CheckImageExists(ctx context.Context, opts RegistryAuthOptions) (bool, error)
 	BuildDestImageID(opts BuildDestOptions) string
 }

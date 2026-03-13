@@ -75,23 +75,13 @@ func (id *ImageID) HasTagOrDigest() bool {
 	if id.tag != "" || id.digest != "" {
 		return true
 	}
-	return id.hasTagOrDigest(id.repo)
-}
-
-func (id *ImageID) hasTagOrDigest(str string) bool {
-	if str == "" {
+	// Check if repo contains embedded tag or digest
+	if id.repo == "" {
 		return false
 	}
-	parts := strings.Split(str, "/")
-	tailSegment := parts[len(parts)-1]
-	if strings.Contains(tailSegment, "@") {
-		return true
-	}
-	colonParts := strings.Split(tailSegment, ":")
-	if len(colonParts) > 2 || len(colonParts) == 2 {
-		return true
-	}
-	return false
+	parts := strings.Split(id.repo, "/")
+	tail := parts[len(parts)-1]
+	return strings.Contains(tail, "@") || strings.Contains(tail, ":")
 }
 
 func (id *ImageID) BuildDestImageID(registryHost, registryNamespace string) string {
@@ -154,7 +144,8 @@ func (id *ImageID) Normalize() string {
 	if lastSlash >= 0 {
 		tail = normalized[lastSlash+1:]
 	}
-	if !id.hasTagOrDigest(tail) {
+	// Check if tail contains tag or digest
+	if !strings.Contains(tail, "@") && !strings.Contains(tail, ":") {
 		normalized += ":latest"
 	}
 

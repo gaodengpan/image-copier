@@ -271,7 +271,6 @@ func executeSyncCommand(
 		registryClient,
 		factory.CreateGitHubClient(cfg.Github.Owner, cfg.Github.Repo, cfg.Github.Token, cfg.Github.WorkflowID),
 		logger,
-		factory.CreateImageIDService(),
 		configAdapter,
 		configAdapter,
 		distributor,

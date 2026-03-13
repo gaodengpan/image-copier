@@ -9,7 +9,6 @@ import (
 	"github.com/gaodengpan/image-copier/internal/domain/entities"
 	"github.com/gaodengpan/image-copier/internal/domain/ports/input"
 	"github.com/gaodengpan/image-copier/internal/domain/ports/output"
-	"github.com/gaodengpan/image-copier/internal/domain/services"
 	"github.com/gaodengpan/image-copier/internal/domain/value_objects"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -41,7 +40,6 @@ func newSyncTestUseCase(m *syncTestMocks) *SyncCommandUseCaseImpl {
 		m.registryClient,
 		m.githubClient,
 		m.logger,
-		services.NewImageIDService(),
 		m.syncConfig,
 		m.targetBuilder,
 		m.distributor,
@@ -65,7 +63,7 @@ func TestSyncCommandUseCase_Execute_DryRun(t *testing.T) {
 	setupBasicSyncExpectations(m)
 
 	// Setup: image does not exist in staging registry
-	m.registryClient.On("CheckImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+	m.registryClient.On("ImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(false, nil)
 
 	uc := newSyncTestUseCase(m)
@@ -91,7 +89,7 @@ func TestSyncCommandUseCase_Execute_ImageAlreadySynced(t *testing.T) {
 	setupBasicSyncExpectations(m)
 
 	// Setup: image already exists in staging registry
-	m.registryClient.On("CheckImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+	m.registryClient.On("ImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(true, nil)
 
 	uc := newSyncTestUseCase(m)
@@ -117,7 +115,7 @@ func TestSyncCommandUseCase_Execute_ForceSync(t *testing.T) {
 	setupBasicSyncExpectations(m)
 
 	// Setup: image exists but Force=true
-	m.registryClient.On("CheckImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+	m.registryClient.On("ImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(true, nil)
 	// syncSingleImageToStaging calls ImageExists to check again
 	m.registryClient.On("ImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
@@ -179,7 +177,7 @@ func TestSyncCommandUseCase_Execute_SkipDistribute(t *testing.T) {
 	setupBasicSyncExpectations(m)
 
 	// Setup: image exists in staging
-	m.registryClient.On("CheckImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+	m.registryClient.On("ImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(true, nil)
 
 	uc := newSyncTestUseCase(m)
@@ -203,7 +201,7 @@ func TestSyncCommandUseCase_Execute_DistributePhase(t *testing.T) {
 	setupBasicSyncExpectations(m)
 
 	// Setup sync phase: image already synced
-	m.registryClient.On("CheckImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+	m.registryClient.On("ImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(true, nil)
 
 	// Setup distribute phase
@@ -239,7 +237,7 @@ func TestSyncCommandUseCase_Execute_DistributeWithErrors(t *testing.T) {
 	setupBasicSyncExpectations(m)
 
 	// Setup sync phase: image already synced
-	m.registryClient.On("CheckImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+	m.registryClient.On("ImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(true, nil)
 
 	// Setup distribute phase with error
@@ -277,7 +275,7 @@ func TestSyncCommandUseCase_Execute_CheckError(t *testing.T) {
 	setupBasicSyncExpectations(m)
 
 	// Setup: error checking image existence
-	m.registryClient.On("CheckImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+	m.registryClient.On("ImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(false, errors.New("network error"))
 
 	// When check fails, the task is still added to NeedsSync, which triggers syncSingleImageToStaging
@@ -309,7 +307,7 @@ func TestSyncCommandUseCase_Execute_SyncFailedWithNoTargets(t *testing.T) {
 	setupBasicSyncExpectations(m)
 
 	// Setup: image does not exist and sync will fail
-	m.registryClient.On("CheckImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+	m.registryClient.On("ImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(false, nil)
 	m.githubClient.On("TriggerWorkflowWithRetry", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return("run-123", nil)
@@ -358,7 +356,7 @@ func TestSyncCommandUseCase_Execute_NoDistributionTargets(t *testing.T) {
 	setupBasicSyncExpectations(m)
 
 	// Setup sync phase: image already synced
-	m.registryClient.On("CheckImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+	m.registryClient.On("ImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(true, nil)
 
 	// Setup: no targets
@@ -392,7 +390,7 @@ func TestSyncCommandUseCase_SyncPhase(t *testing.T) {
 	setupBasicSyncExpectations(m)
 
 	// Setup: image does not exist in staging
-	m.registryClient.On("CheckImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+	m.registryClient.On("ImageExists", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(false, nil)
 
 	uc := newSyncTestUseCase(m)

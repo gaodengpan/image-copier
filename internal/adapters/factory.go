@@ -6,7 +6,6 @@ import (
 	"github.com/gaodengpan/image-copier/internal/adapters/secondary/gateways"
 	"github.com/gaodengpan/image-copier/internal/adapters/secondary/logging"
 	"github.com/gaodengpan/image-copier/internal/domain/ports/output"
-	"github.com/gaodengpan/image-copier/internal/domain/services"
 	"github.com/gaodengpan/image-copier/internal/infrastructure/system"
 	"github.com/sirupsen/logrus"
 )
@@ -43,10 +42,6 @@ func (f *AdapterFactory) CreateHTTPClient() output.HTTPClient {
 
 func (f *AdapterFactory) CreateSystemClient() output.SystemClient {
 	return system.NewSystemAdapter()
-}
-
-func (f *AdapterFactory) CreateImageIDService() *services.ImageIDService {
-	return services.NewImageIDService()
 }
 
 // CreateLogger returns a Logger interface implementation

@@ -145,30 +145,6 @@ func TestSkopeoAdapter_BuildDestImageID_MaxLength(t *testing.T) {
 	assert.True(t, strings.HasSuffix(result, ":v1.0"))
 }
 
-func TestSkopeoAdapter_CheckImageExists_InvalidImageName(t *testing.T) {
-	adapter := NewSkopeoAdapter()
-
-	_, err := adapter.CheckImageExists(context.Background(), output.RegistryAuthOptions{
-		ImageID:  "invalid;command",
-		Username: "user",
-		Password: "pass",
-	})
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid image name")
-}
-
-func TestSkopeoAdapter_CheckImageExists_InvalidCredentials(t *testing.T) {
-	adapter := NewSkopeoAdapter()
-
-	_, err := adapter.CheckImageExists(context.Background(), output.RegistryAuthOptions{
-		ImageID:  "nginx:latest",
-		Username: "",
-		Password: "pass",
-	})
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid credentials")
-}
-
 func TestSkopeoAdapter_SaveImageToWriter_NilWriter(t *testing.T) {
 	adapter := NewSkopeoAdapter()
 

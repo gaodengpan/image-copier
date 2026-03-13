@@ -5,19 +5,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gaodengpan/image-copier/internal/domain/value_objects"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestSyncStatus_String(t *testing.T) {
+func TestTaskStatus_String(t *testing.T) {
 	tests := []struct {
 		name   string
-		status SyncStatus
+		status value_objects.TaskStatus
 		want   string
 	}{
-		{"pending", SyncStatusPending, "pending"},
-		{"syncing", SyncStatusSyncing, "syncing"},
-		{"completed", SyncStatusCompleted, "completed"},
-		{"failed", SyncStatusFailed, "failed"},
+		{"pending", value_objects.TaskStatusPending, "pending"},
+		{"syncing", value_objects.TaskStatusSyncing, "syncing"},
+		{"completed", value_objects.TaskStatusCompleted, "completed"},
+		{"failed", value_objects.TaskStatusFailed, "failed"},
 	}
 
 	for _, tt := range tests {
@@ -27,16 +28,16 @@ func TestSyncStatus_String(t *testing.T) {
 	}
 }
 
-func TestSyncStatus_IsTerminal(t *testing.T) {
+func TestTaskStatus_IsTerminal(t *testing.T) {
 	tests := []struct {
 		name   string
-		status SyncStatus
+		status value_objects.TaskStatus
 		want   bool
 	}{
-		{"pending", SyncStatusPending, false},
-		{"syncing", SyncStatusSyncing, false},
-		{"completed", SyncStatusCompleted, true},
-		{"failed", SyncStatusFailed, true},
+		{"pending", value_objects.TaskStatusPending, false},
+		{"syncing", value_objects.TaskStatusSyncing, false},
+		{"completed", value_objects.TaskStatusCompleted, true},
+		{"failed", value_objects.TaskStatusFailed, true},
 	}
 
 	for _, tt := range tests {
@@ -53,7 +54,7 @@ func TestNewSyncTask(t *testing.T) {
 	assert.Equal(t, "nginx:latest", task.Source)
 	assert.Equal(t, "amd64", task.Arch)
 	assert.Equal(t, "linux", task.Os)
-	assert.Equal(t, SyncStatusPending, task.Status)
+	assert.Equal(t, value_objects.TaskStatusPending, task.Status)
 	assert.Nil(t, task.StartedAt)
 	assert.Nil(t, task.CompletedAt)
 }
@@ -64,7 +65,7 @@ func TestSyncTask_Start(t *testing.T) {
 		err := task.Start()
 
 		assert.NoError(t, err)
-		assert.Equal(t, SyncStatusSyncing, task.Status)
+		assert.Equal(t, value_objects.TaskStatusSyncing, task.Status)
 		assert.NotNil(t, task.StartedAt)
 	})
 
@@ -79,7 +80,7 @@ func TestSyncTask_Start(t *testing.T) {
 
 	t.Run("FromCompleted", func(t *testing.T) {
 		task := NewSyncTask("1", "nginx", "amd64", "linux")
-		task.Status = SyncStatusCompleted
+		task.Status = value_objects.TaskStatusCompleted
 
 		err := task.Start()
 		assert.Error(t, err)
@@ -87,7 +88,7 @@ func TestSyncTask_Start(t *testing.T) {
 
 	t.Run("FromFailed", func(t *testing.T) {
 		task := NewSyncTask("1", "nginx", "amd64", "linux")
-		task.Status = SyncStatusFailed
+		task.Status = value_objects.TaskStatusFailed
 
 		err := task.Start()
 		assert.Error(t, err)
@@ -101,7 +102,7 @@ func TestSyncTask_Complete(t *testing.T) {
 
 		err := task.Complete()
 		assert.NoError(t, err)
-		assert.Equal(t, SyncStatusCompleted, task.Status)
+		assert.Equal(t, value_objects.TaskStatusCompleted, task.Status)
 		assert.NotNil(t, task.CompletedAt)
 	})
 
@@ -115,7 +116,7 @@ func TestSyncTask_Complete(t *testing.T) {
 
 	t.Run("FromFailed", func(t *testing.T) {
 		task := NewSyncTask("1", "nginx", "amd64", "linux")
-		task.Status = SyncStatusFailed
+		task.Status = value_objects.TaskStatusFailed
 
 		err := task.Complete()
 		assert.Error(t, err)
@@ -130,7 +131,7 @@ func TestSyncTask_Fail(t *testing.T) {
 	err := task.Fail(testErr)
 
 	assert.NoError(t, err)
-	assert.Equal(t, SyncStatusFailed, task.Status)
+	assert.Equal(t, value_objects.TaskStatusFailed, task.Status)
 	assert.Equal(t, testErr, task.Error)
 	assert.NotNil(t, task.CompletedAt)
 }

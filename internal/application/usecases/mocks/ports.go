@@ -30,11 +30,6 @@ func (m *MockRegistryClient) SaveImageToWriter(ctx context.Context, opts output.
 	return args.Error(0)
 }
 
-func (m *MockRegistryClient) CheckImageExists(ctx context.Context, opts output.RegistryAuthOptions) (bool, error) {
-	args := m.Called(ctx, opts)
-	return args.Bool(0), args.Error(1)
-}
-
 func (m *MockRegistryClient) BuildDestImageID(opts output.BuildDestOptions) string {
 	args := m.Called(opts)
 	return args.String(0)
