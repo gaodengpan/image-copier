@@ -180,13 +180,7 @@ func executeSyncCommand(
 	outputFormat string,
 	verbose bool,
 ) error {
-	// Set log level based on verbose flag
-	if verbose {
-		logger.SetLevel(logrus.DebugLevel)
-	} else {
-		// In non-verbose mode, suppress info logs to avoid interfering with progress bar
-		logger.SetLevel(logrus.WarnLevel)
-	}
+	setupLogLevel(logger, verbose)
 
 	if len(images) == 0 {
 		fmt.Println("No images to sync.")
@@ -194,18 +188,13 @@ func executeSyncCommand(
 	}
 
 	// Create presenter
-	var presenter SyncPresenter
-	if outputFormat == "json" {
-		presenter = NewSyncJSONPresenter()
-	} else {
-		presenter = NewSyncCLIPresenter()
-	}
+	presenter := createPresenter(outputFormat)
 
 	// Present start
 	presenter.PresentSyncStart(len(images))
 
 	// Create progress manager
-	prog := presenter.PresentProgress(len(images), syncInput.WorkerCount)
+	prog := createProgress(presenter, len(images), syncInput.WorkerCount)
 
 	// Redirect logger output to progress bar's LogWriter for proper integration
 	// This ensures logs appear above the progress bar without breaking the animation
@@ -213,125 +202,17 @@ func executeSyncCommand(
 		logger.SetOutput(prog.LogWriter())
 	}
 
-	// Build image map for progress tracking
-	imageMap := make(map[string]int)
-	for i, img := range images {
-		imageMap[img] = i
-		prog.AddImage(i, img)
-	}
+	// Create progress callbacks
+	callbacks := createProgressCallbacks(prog, images, syncInput.WorkerCount)
+	syncInput.ProgressCallback = callbacks.ProgressCallback
+	syncInput.TaskComplete = callbacks.TaskComplete
 
-	// Create progress callback
-	syncInput.ProgressCallback = func(imageID string, stage value_objects.SyncStage, targetName string, percent float64) {
-		if idx, ok := imageMap[imageID]; ok {
-			prog.UpdateSyncStage(idx%syncInput.WorkerCount, imageID, stage, targetName, percent)
-		}
-	}
-
-	// Create task complete callback for incrementing main progress bar
-	syncInput.TaskComplete = func(imageID string, skipped bool, err error) {
-		if idx, ok := imageMap[imageID]; ok {
-			if err != nil {
-				prog.UpdateStatus(idx, progress.StatusFailed, err)
-			} else if skipped {
-				prog.UpdateStatus(idx, progress.StatusSkipped, nil)
-			} else {
-				prog.UpdateStatus(idx, progress.StatusCompleted, nil)
-			}
-			prog.Increment()
-		}
-	}
-
-	// Create factory and strategies
+	// Create factory and use case
 	factory := adapters.NewAdapterFactory(logger)
+	syncUseCase := buildSyncUseCase(logger, cfg, factory)
 
-	registryClient := factory.CreateRegistryClient()
-
-	dockerStrategy := gateways.NewDockerSyncStrategy(
-		factory.CreateDockerClient(),
-		registryClient,
-		factory.CreateFileSystem(),
-	)
-
-	registryStrategy := gateways.NewRegistrySyncStrategy(
-		registryClient,
-	)
-
-	// Create distributor
-	distributor := gateways.NewMultiTargetDistributor(
-		dockerStrategy,
-		registryStrategy,
-		logger,
-	)
-
-	// Create config adapter
-	configAdapter := gateways.NewConfigAdapter(cfg, logger)
-
-	// Create use case
-	syncUseCase := use_cases.NewSyncCommandUseCase(
-		registryClient,
-		factory.CreateGitHubClient(cfg.Github.Owner, cfg.Github.Repo, cfg.Github.Token, cfg.Github.WorkflowID),
-		logger,
-		factory.CreateImageIDService(),
-		configAdapter,
-		configAdapter,
-		distributor,
-	)
-
-	// Execute
-	result, err := syncUseCase.Execute(ctx, syncInput)
-	if err != nil {
-		prog.AbortWorkers()
-		presenter.PresentError(err)
-		return err
-	}
-
-	// Wait for progress bar to complete
-	prog.Wait()
-
-	// Present phase results for JSON mode
-	if outputFormat == "json" {
-		if result.SyncPhase != nil {
-			presenter.PresentSyncPhaseResult(result.SyncPhase)
-		}
-		if result.DistributePhase != nil {
-			presenter.PresentDistributePhaseResult(result.DistributePhase)
-		}
-	}
-
-	// Build summary with nil-safe access
-	summary := &SyncSummary{
-		TotalImages: len(images),
-		Duration:    result.Duration,
-	}
-	if result.SyncPhase != nil {
-		summary.SyncSuccess = len(result.SyncPhase.NewlySynced)
-		summary.SyncSkipped = len(result.SyncPhase.AlreadyExisted)
-		summary.SyncFailed = len(result.SyncPhase.Failed)
-	}
-	if result.DistributePhase != nil {
-		summary.DistSuccess = result.DistributePhase.SuccessCount
-		summary.DistSkipped = result.DistributePhase.SkippedCount
-		summary.DistFailed = result.DistributePhase.FailedCount
-	}
-	presenter.PresentSummary(summary)
-
-	// Return error if any failures
-	syncFailed := 0
-	distFailed := 0
-	if result.SyncPhase != nil {
-		syncFailed = len(result.SyncPhase.Failed)
-	}
-	if result.DistributePhase != nil {
-		distFailed = result.DistributePhase.FailedCount
-	}
-	if syncFailed > 0 || distFailed > 0 {
-		if outputFormat != "json" {
-			return fmt.Errorf("sync completed with %d sync failures and %d distribution failures",
-				syncFailed, distFailed)
-		}
-	}
-
-	return nil
+	// Execute and present results
+	return executeAndPresent(ctx, syncUseCase, syncInput, prog, presenter, outputFormat, images, logger)
 }
 
 // SyncPresenter defines the interface for presenting sync results
@@ -354,4 +235,167 @@ type SyncSummary struct {
 	DistSkipped int
 	DistFailed  int
 	Duration    time.Duration
+}
+
+// setupLogLevel configures the logger level based on verbose flag
+func setupLogLevel(logger *logrus.Logger, verbose bool) {
+	if verbose {
+		logger.SetLevel(logrus.DebugLevel)
+	} else {
+		// In non-verbose mode, suppress info logs to avoid interfering with progress bar
+		logger.SetLevel(logrus.WarnLevel)
+	}
+}
+
+// createPresenter creates the appropriate presenter based on output format
+func createPresenter(outputFormat string) SyncPresenter {
+	if outputFormat == "json" {
+		return NewSyncJSONPresenter()
+	}
+	return NewSyncCLIPresenter()
+}
+
+// createProgress creates a progress manager
+func createProgress(presenter SyncPresenter, total, workerCount int) *progress.Progress {
+	return presenter.PresentProgress(total, workerCount)
+}
+
+// progressCallbacks encapsulates progress callback functions
+type progressCallbacks struct {
+	ProgressCallback func(imageID string, stage value_objects.SyncStage, targetName string, percent float64)
+	TaskComplete     func(imageID string, skipped bool, err error)
+}
+
+// createProgressCallbacks creates progress and task complete callbacks
+func createProgressCallbacks(prog *progress.Progress, images []string, workerCount int) *progressCallbacks {
+	// Build image map for progress tracking
+	imageMap := make(map[string]int)
+	for i, img := range images {
+		imageMap[img] = i
+		prog.AddImage(i, img)
+	}
+
+	return &progressCallbacks{
+		ProgressCallback: func(imageID string, stage value_objects.SyncStage, targetName string, percent float64) {
+			if idx, ok := imageMap[imageID]; ok {
+				prog.UpdateSyncStage(idx%workerCount, imageID, stage, targetName, percent)
+			}
+		},
+		TaskComplete: func(imageID string, skipped bool, err error) {
+			if idx, ok := imageMap[imageID]; ok {
+				if err != nil {
+					prog.UpdateStatus(idx, progress.StatusFailed, err)
+				} else if skipped {
+					prog.UpdateStatus(idx, progress.StatusSkipped, nil)
+				} else {
+					prog.UpdateStatus(idx, progress.StatusCompleted, nil)
+				}
+				prog.Increment()
+			}
+		},
+	}
+}
+
+// buildSyncUseCase creates the sync use case with all dependencies
+func buildSyncUseCase(logger *logrus.Logger, cfg *config.Config, factory *adapters.AdapterFactory) input.SyncCommandUseCase {
+	registryClient := factory.CreateRegistryClient()
+
+	dockerStrategy := gateways.NewDockerSyncStrategy(
+		factory.CreateDockerClient(),
+		registryClient,
+		factory.CreateFileSystem(),
+	)
+
+	registryStrategy := gateways.NewRegistrySyncStrategy(registryClient)
+
+	distributor := gateways.NewMultiTargetDistributor(
+		dockerStrategy,
+		registryStrategy,
+		logger,
+	)
+
+	configAdapter := gateways.NewConfigAdapter(cfg, logger)
+
+	return use_cases.NewSyncCommandUseCase(
+		registryClient,
+		factory.CreateGitHubClient(cfg.Github.Owner, cfg.Github.Repo, cfg.Github.Token, cfg.Github.WorkflowID),
+		logger,
+		configAdapter,
+		configAdapter,
+		distributor,
+	)
+}
+
+// buildSyncSummary builds a summary from the sync result
+func buildSyncSummary(result *input.SyncCommandResult, images []string) *SyncSummary {
+	summary := &SyncSummary{
+		TotalImages: len(images),
+		Duration:    result.Duration,
+	}
+	if result.SyncPhase != nil {
+		summary.SyncSuccess = len(result.SyncPhase.NewlySynced)
+		summary.SyncSkipped = len(result.SyncPhase.AlreadyExisted)
+		summary.SyncFailed = len(result.SyncPhase.Failed)
+	}
+	if result.DistributePhase != nil {
+		summary.DistSuccess = result.DistributePhase.SuccessCount
+		summary.DistSkipped = result.DistributePhase.SkippedCount
+		summary.DistFailed = result.DistributePhase.FailedCount
+	}
+	return summary
+}
+
+// executeAndPresent executes the sync use case and presents results
+func executeAndPresent(
+	ctx context.Context,
+	syncUseCase input.SyncCommandUseCase,
+	syncInput input.SyncCommandInput,
+	prog *progress.Progress,
+	presenter SyncPresenter,
+	outputFormat string,
+	images []string,
+	logger *logrus.Logger,
+) error {
+	// Execute
+	result, err := syncUseCase.Execute(ctx, syncInput)
+	if err != nil {
+		prog.AbortWorkers()
+		presenter.PresentError(err)
+		return err
+	}
+
+	// Wait for progress bar to complete
+	prog.Wait()
+
+	// Present phase results for JSON mode
+	if outputFormat == "json" {
+		if result.SyncPhase != nil {
+			presenter.PresentSyncPhaseResult(result.SyncPhase)
+		}
+		if result.DistributePhase != nil {
+			presenter.PresentDistributePhaseResult(result.DistributePhase)
+		}
+	}
+
+	// Build and present summary
+	summary := buildSyncSummary(result, images)
+	presenter.PresentSummary(summary)
+
+	// Return error if any failures
+	syncFailed := 0
+	distFailed := 0
+	if result.SyncPhase != nil {
+		syncFailed = len(result.SyncPhase.Failed)
+	}
+	if result.DistributePhase != nil {
+		distFailed = result.DistributePhase.FailedCount
+	}
+	if syncFailed > 0 || distFailed > 0 {
+		if outputFormat != "json" {
+			return fmt.Errorf("sync completed with %d sync failures and %d distribution failures",
+				syncFailed, distFailed)
+		}
+	}
+
+	return nil
 }

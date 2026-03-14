@@ -1,13 +1,17 @@
 package entities
 
-import "time"
+import (
+	"time"
+
+	"github.com/gaodengpan/image-copier/internal/domain/value_objects"
+)
 
 type SyncTask struct {
 	ID          string
 	Source      string
 	Arch        string
 	Os          string
-	Status      SyncStatus
+	Status      value_objects.TaskStatus
 	Error       error
 	StartedAt   *time.Time
 	CompletedAt *time.Time
@@ -19,33 +23,33 @@ func NewSyncTask(id, source, arch, os string) *SyncTask {
 		Source: source,
 		Arch:   arch,
 		Os:     os,
-		Status: SyncStatusPending,
+		Status: value_objects.TaskStatusPending,
 	}
 }
 
 func (t *SyncTask) Start() error {
-	if t.Status != SyncStatusPending {
+	if t.Status != value_objects.TaskStatusPending {
 		return ErrTaskAlreadyStarted
 	}
 	now := time.Now()
-	t.Status = SyncStatusSyncing
+	t.Status = value_objects.TaskStatusSyncing
 	t.StartedAt = &now
 	return nil
 }
 
 func (t *SyncTask) Complete() error {
-	if t.Status != SyncStatusSyncing {
+	if t.Status != value_objects.TaskStatusSyncing {
 		return ErrTaskNotSyncing
 	}
 	now := time.Now()
-	t.Status = SyncStatusCompleted
+	t.Status = value_objects.TaskStatusCompleted
 	t.CompletedAt = &now
 	return nil
 }
 
 func (t *SyncTask) Fail(err error) error {
 	now := time.Now()
-	t.Status = SyncStatusFailed
+	t.Status = value_objects.TaskStatusFailed
 	t.Error = err
 	t.CompletedAt = &now
 	return nil

@@ -3,26 +3,9 @@ package entities
 import (
 	"time"
 
+	"github.com/gaodengpan/image-copier/internal/domain/value_objects"
 	sharederrors "github.com/gaodengpan/image-copier/internal/shared/errors"
 )
-
-// DistributeStatus represents the status of a distribution task
-type DistributeStatus string
-
-const (
-	DistributeStatusPending   DistributeStatus = "pending"
-	DistributeStatusSyncing   DistributeStatus = "syncing"
-	DistributeStatusCompleted DistributeStatus = "completed"
-	DistributeStatusFailed    DistributeStatus = "failed"
-)
-
-func (s DistributeStatus) String() string {
-	return string(s)
-}
-
-func (s DistributeStatus) IsTerminal() bool {
-	return s == DistributeStatusCompleted || s == DistributeStatusFailed
-}
 
 // TargetResult represents the result of distributing to a single target
 type TargetResult struct {
@@ -39,7 +22,7 @@ type DistributeTask struct {
 	Arch           string
 	Os             string
 	Targets        []string // Target names
-	Status         DistributeStatus
+	Status         value_objects.TaskStatus
 	Results        []TargetResult
 	Error          error
 	StartedAt      *time.Time
@@ -60,29 +43,29 @@ func NewDistributeTask(sourceImageID, originalSource, arch, os string, targets [
 		Arch:           arch,
 		Os:             os,
 		Targets:        targets,
-		Status:         DistributeStatusPending,
+		Status:         value_objects.TaskStatusPending,
 		Results:        make([]TargetResult, 0),
 	}
 }
 
 // Start marks the task as syncing (phase 1)
 func (t *DistributeTask) Start() error {
-	if t.Status != DistributeStatusPending {
+	if t.Status != value_objects.TaskStatusPending {
 		return ErrDistributeTaskAlreadyStarted
 	}
 	now := time.Now()
-	t.Status = DistributeStatusSyncing
+	t.Status = value_objects.TaskStatusSyncing
 	t.StartedAt = &now
 	return nil
 }
 
 // Complete marks the task as completed
 func (t *DistributeTask) Complete() error {
-	if t.Status != DistributeStatusSyncing {
+	if t.Status != value_objects.TaskStatusSyncing {
 		return ErrDistributeTaskNotDistributing
 	}
 	now := time.Now()
-	t.Status = DistributeStatusCompleted
+	t.Status = value_objects.TaskStatusCompleted
 	t.CompletedAt = &now
 	return nil
 }
@@ -90,7 +73,7 @@ func (t *DistributeTask) Complete() error {
 // Fail marks the task as failed with an error
 func (t *DistributeTask) Fail(err error) {
 	now := time.Now()
-	t.Status = DistributeStatusFailed
+	t.Status = value_objects.TaskStatusFailed
 	t.Error = err
 	t.CompletedAt = &now
 }

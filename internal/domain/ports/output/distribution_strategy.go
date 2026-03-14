@@ -35,6 +35,20 @@ type DistributionOptions struct {
 	Force bool
 }
 
+// ToSyncTargetOptions converts DistributionOptions to SyncTargetOptions
+func (o DistributionOptions) ToSyncTargetOptions() SyncTargetOptions {
+	return SyncTargetOptions{
+		SourceImageID:          o.SourceImageID,
+		SourceRegistryHost:     o.SourceRegistryHost,
+		SourceRegistryNS:       o.SourceRegistryNS,
+		SourceRegistryUsername: o.SourceRegistryUser,
+		SourceRegistryPassword: o.SourceRegistryPass,
+		TargetRegistryHost:     o.TargetRegistryHost,
+		TargetRegistryUsername: o.TargetRegistryUser,
+		TargetRegistryPassword: o.TargetRegistryPass,
+	}
+}
+
 // DistributionStrategy defines the interface for distributing images to a target
 type DistributionStrategy interface {
 	// Distribute distributes an image from the staging registry to the target

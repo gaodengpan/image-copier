@@ -18,7 +18,6 @@ type SyncCommandUseCaseImpl struct {
 	registryClient output.RegistryClient
 	githubClient   output.GitHubClientWithRetry
 	logger         output.Logger
-	imageIDService output.ImageIDService
 	syncConfig     output.SyncConfig
 	targetBuilder  output.DistributionTargetBuilder
 	distributor    output.MultiTargetDistributor
@@ -29,7 +28,6 @@ func NewSyncCommandUseCase(
 	registryClient output.RegistryClient,
 	githubClient output.GitHubClientWithRetry,
 	logger output.Logger,
-	imageIDService output.ImageIDService,
 	syncConfig output.SyncConfig,
 	targetBuilder output.DistributionTargetBuilder,
 	distributor output.MultiTargetDistributor,
@@ -38,7 +36,6 @@ func NewSyncCommandUseCase(
 		registryClient: registryClient,
 		githubClient:   githubClient,
 		logger:         logger,
-		imageIDService: imageIDService,
 		syncConfig:     syncConfig,
 		targetBuilder:  targetBuilder,
 		distributor:    distributor,
@@ -48,6 +45,9 @@ func NewSyncCommandUseCase(
 // Execute executes the full two-phase sync command
 func (uc *SyncCommandUseCaseImpl) Execute(ctx context.Context, in input.SyncCommandInput) (*input.SyncCommandResult, error) {
 	startTime := time.Now()
+
+	// Create progress notifier for cleaner callback handling
+	progress := NewProgressNotifier(in.ProgressCallback)
 
 	// Build sync tasks from input
 	tasks := uc.buildSyncTasks(in)
@@ -59,7 +59,7 @@ func (uc *SyncCommandUseCaseImpl) Execute(ctx context.Context, in input.SyncComm
 
 	// Phase 1: Sync to staging registry
 	if !in.SkipSync {
-		syncResult, err := uc.executeSyncPhase(ctx, tasks, in)
+		syncResult, err := uc.executeSyncPhase(ctx, tasks, in, progress)
 		if err != nil {
 			return nil, err
 		}
@@ -73,7 +73,7 @@ func (uc *SyncCommandUseCaseImpl) Execute(ctx context.Context, in input.SyncComm
 	if !in.SkipDistribute {
 		// Build distribute tasks from synced images
 		distributeTasks, skippedInSync := uc.buildDistributeTasks(result.SyncPhase, in)
-		distributeResult, err := uc.executeDistributePhase(ctx, distributeTasks, skippedInSync, in)
+		distributeResult, err := uc.executeDistributePhase(ctx, distributeTasks, skippedInSync, in, progress)
 		if err != nil {
 			return nil, err
 		}
@@ -107,7 +107,8 @@ func (uc *SyncCommandUseCaseImpl) Execute(ctx context.Context, in input.SyncComm
 // SyncPhase executes only the sync phase
 func (uc *SyncCommandUseCaseImpl) SyncPhase(ctx context.Context, in input.SyncCommandInput) (*input.SyncPhaseResult, error) {
 	tasks := uc.buildSyncTasks(in)
-	return uc.executeSyncPhase(ctx, tasks, in)
+	progress := NewProgressNotifier(in.ProgressCallback)
+	return uc.executeSyncPhase(ctx, tasks, in, progress)
 }
 
 // DistributePhase executes only the distribute phase
@@ -118,7 +119,8 @@ func (uc *SyncCommandUseCaseImpl) DistributePhase(ctx context.Context, syncedIma
 		tasks[i] = entities.NewDistributeTask(imageID, imageID, in.Arch, in.Os, in.Targets)
 	}
 	// When running distribute phase alone, all images are considered newly synced (not skipped)
-	return uc.executeDistributePhase(ctx, tasks, make(map[string]bool), in)
+	progress := NewProgressNotifier(in.ProgressCallback)
+	return uc.executeDistributePhase(ctx, tasks, make(map[string]bool), in, progress)
 }
 
 // buildSyncTasks builds sync tasks from input
@@ -131,7 +133,7 @@ func (uc *SyncCommandUseCaseImpl) buildSyncTasks(in input.SyncCommandInput) []*e
 }
 
 // executeSyncPhase executes Phase 1: sync to staging registry
-func (uc *SyncCommandUseCaseImpl) executeSyncPhase(ctx context.Context, tasks []*entities.SyncTask, in input.SyncCommandInput) (*input.SyncPhaseResult, error) {
+func (uc *SyncCommandUseCaseImpl) executeSyncPhase(ctx context.Context, tasks []*entities.SyncTask, in input.SyncCommandInput, progress *ProgressNotifier) (*input.SyncPhaseResult, error) {
 	uc.logger.Infof("Phase 1: Syncing %d images to staging registry", len(tasks))
 
 	result := &input.SyncPhaseResult{
@@ -142,7 +144,7 @@ func (uc *SyncCommandUseCaseImpl) executeSyncPhase(ctx context.Context, tasks []
 	}
 
 	// Diff phase: check which images need sync
-	diffResults := uc.diffStagingRegistry(ctx, tasks, in)
+	diffResults := uc.diffStagingRegistry(ctx, tasks, in, progress)
 
 	// Separate tasks into already existed and needs sync
 	var needsSync []*entities.SyncTask
@@ -168,7 +170,7 @@ func (uc *SyncCommandUseCaseImpl) executeSyncPhase(ctx context.Context, tasks []
 
 	// Sync phase: trigger GitHub Actions for images that need sync
 	if len(needsSync) > 0 {
-		uc.syncToStaging(ctx, needsSync, in, result)
+		uc.syncToStaging(ctx, needsSync, in, result, progress)
 	}
 
 	return result, nil
@@ -182,15 +184,13 @@ type diffResult struct {
 }
 
 // diffStagingRegistry checks which images exist in the staging registry
-func (uc *SyncCommandUseCaseImpl) diffStagingRegistry(ctx context.Context, tasks []*entities.SyncTask, in input.SyncCommandInput) []diffResult {
+func (uc *SyncCommandUseCaseImpl) diffStagingRegistry(ctx context.Context, tasks []*entities.SyncTask, in input.SyncCommandInput, progress *ProgressNotifier) []diffResult {
 	rawResults := concurrency.CollectResults(concurrency.ParallelForEach(ctx, tasks, in.WorkerCount,
 		func(ctx context.Context, task *entities.SyncTask) (diffResult, error) {
 			// Notify progress: checking stage
-			if in.ProgressCallback != nil {
-				in.ProgressCallback(task.Source, value_objects.SyncStageChecking, "", 0)
-			}
+			progress.NotifyChecking(task.Source, ProgressStart)
 
-			sourceID := uc.imageIDService.NormalizeSourceID(task.Source)
+			sourceID := value_objects.ParseImageID(task.Source).Normalize()
 			destID := uc.registryClient.BuildDestImageID(output.BuildDestOptions{
 				SourceID:          sourceID,
 				RegistryHost:      uc.syncConfig.StagingRegistryHost(),
@@ -198,7 +198,7 @@ func (uc *SyncCommandUseCaseImpl) diffStagingRegistry(ctx context.Context, tasks
 			})
 
 			uc.logger.Debugf("Checking image existence: %s -> %s", sourceID, destID)
-			exists, err := uc.registryClient.CheckImageExists(ctx, output.RegistryAuthOptions{
+			exists, err := uc.registryClient.ImageExists(ctx, output.RegistryAuthOptions{
 				ImageID:  destID,
 				Username: uc.syncConfig.StagingRegistryUsername(),
 				Password: uc.syncConfig.StagingRegistryPassword(),
@@ -213,9 +213,7 @@ func (uc *SyncCommandUseCaseImpl) diffStagingRegistry(ctx context.Context, tasks
 			}
 
 			// Notify progress: checking complete (100%)
-			if in.ProgressCallback != nil {
-				in.ProgressCallback(task.Source, value_objects.SyncStageChecking, "", 100)
-			}
+			progress.NotifyChecking(task.Source, ProgressDone)
 
 			return diffResult{
 				Task:         task,
@@ -234,13 +232,13 @@ func (uc *SyncCommandUseCaseImpl) diffStagingRegistry(ctx context.Context, tasks
 
 // syncToStaging triggers GitHub Actions to sync images to staging registry
 // Uses semaphore to limit concurrent operations to workerCount
-func (uc *SyncCommandUseCaseImpl) syncToStaging(ctx context.Context, tasks []*entities.SyncTask, in input.SyncCommandInput, result *input.SyncPhaseResult) {
+func (uc *SyncCommandUseCaseImpl) syncToStaging(ctx context.Context, tasks []*entities.SyncTask, in input.SyncCommandInput, result *input.SyncPhaseResult, progress *ProgressNotifier) {
 	uc.logger.Infof("Syncing %d images to staging registry with %d workers", len(tasks), in.WorkerCount)
 
 	var mu sync.Mutex
 
 	_ = concurrency.ParallelForEachSimple(ctx, tasks, in.WorkerCount, func(ctx context.Context, task *entities.SyncTask) error {
-		if err := uc.syncSingleImageToStaging(ctx, task, in); err != nil {
+		if err := uc.syncSingleImageToStaging(ctx, task, in, progress); err != nil {
 			mu.Lock()
 			// Add to Failed list
 			_ = task.Fail(err)
@@ -260,8 +258,8 @@ func (uc *SyncCommandUseCaseImpl) syncToStaging(ctx context.Context, tasks []*en
 // syncSingleImageToStaging syncs a single image to the staging registry
 // Note: Image existence is already checked in diffStagingRegistry phase,
 // so we don't need to check again here.
-func (uc *SyncCommandUseCaseImpl) syncSingleImageToStaging(ctx context.Context, task *entities.SyncTask, in input.SyncCommandInput) error {
-	sourceID := uc.imageIDService.NormalizeSourceID(task.Source)
+func (uc *SyncCommandUseCaseImpl) syncSingleImageToStaging(ctx context.Context, task *entities.SyncTask, in input.SyncCommandInput, progress *ProgressNotifier) error {
+	sourceID := value_objects.ParseImageID(task.Source).Normalize()
 	destID := uc.registryClient.BuildDestImageID(output.BuildDestOptions{
 		SourceID:          sourceID,
 		RegistryHost:      uc.syncConfig.StagingRegistryHost(),
@@ -278,9 +276,7 @@ func (uc *SyncCommandUseCaseImpl) syncSingleImageToStaging(ctx context.Context, 
 	}
 
 	// Notify progress: sync stage started (0%)
-	if in.ProgressCallback != nil {
-		in.ProgressCallback(task.Source, value_objects.SyncStageSyncing, "", 0)
-	}
+	progress.NotifySyncing(task.Source, ProgressStart)
 
 	// Trigger GitHub Actions workflow
 	// Note: diffStagingRegistry already checked existence, so we proceed directly
@@ -291,9 +287,7 @@ func (uc *SyncCommandUseCaseImpl) syncSingleImageToStaging(ctx context.Context, 
 	}
 
 	// Notify progress: sync stage in progress (50%)
-	if in.ProgressCallback != nil {
-		in.ProgressCallback(task.Source, value_objects.SyncStageSyncing, "", 50)
-	}
+	progress.NotifySyncing(task.Source, ProgressHalfway)
 
 	// Wait for workflow to complete
 	uc.logger.Infof("Waiting for workflow %s to complete", runID)
@@ -302,9 +296,7 @@ func (uc *SyncCommandUseCaseImpl) syncSingleImageToStaging(ctx context.Context, 
 	}
 
 	// Notify progress: sync stage complete (100%)
-	if in.ProgressCallback != nil {
-		in.ProgressCallback(task.Source, value_objects.SyncStageSyncing, "", 100)
-	}
+	progress.NotifySyncing(task.Source, ProgressDone)
 
 	uc.logger.Infof("Successfully synced %s to staging registry", sourceID)
 	return nil
@@ -328,7 +320,7 @@ func (uc *SyncCommandUseCaseImpl) buildDistributeTasks(syncResult *input.SyncPha
 	for i, syncTask := range allImages {
 		// Use normalized source ID as SourceImageID - the distribution strategies
 		// will build the full staging registry path using BuildDestImageID
-		sourceID := uc.imageIDService.NormalizeSourceID(syncTask.Source)
+		sourceID := value_objects.ParseImageID(syncTask.Source).Normalize()
 
 		uc.logger.Debugf("Building distribute task: %s -> %s", syncTask.Source, sourceID)
 		tasks[i] = entities.NewDistributeTask(sourceID, syncTask.Source, syncTask.Arch, syncTask.Os, in.Targets)
@@ -338,7 +330,7 @@ func (uc *SyncCommandUseCaseImpl) buildDistributeTasks(syncResult *input.SyncPha
 
 // executeDistributePhase executes Phase 2: distribute to targets
 // Uses semaphore to limit concurrent operations to workerCount
-func (uc *SyncCommandUseCaseImpl) executeDistributePhase(ctx context.Context, tasks []*entities.DistributeTask, skippedInSync map[string]bool, in input.SyncCommandInput) (*input.DistributePhaseResult, error) {
+func (uc *SyncCommandUseCaseImpl) executeDistributePhase(ctx context.Context, tasks []*entities.DistributeTask, skippedInSync map[string]bool, in input.SyncCommandInput, progress *ProgressNotifier) (*input.DistributePhaseResult, error) {
 	targets := uc.syncConfig.GetDistributionTargets(in.Targets)
 
 	if len(targets) == 0 {
@@ -384,9 +376,7 @@ func (uc *SyncCommandUseCaseImpl) executeDistributePhase(ctx context.Context, ta
 		}
 
 		// Notify progress: distribution stage started (0%)
-		if in.ProgressCallback != nil {
-			in.ProgressCallback(t.OriginalSource, value_objects.SyncStageDistributing, "", 0)
-		}
+		progress.NotifyDistributing(t.OriginalSource, "", ProgressStart)
 
 		// Use distributor to distribute to all targets
 		distResult := uc.distributor.DistributeToAll(
@@ -413,10 +403,8 @@ func (uc *SyncCommandUseCaseImpl) executeDistributePhase(ctx context.Context, ta
 				})
 			}
 			// Notify progress for each target with cumulative percentage
-			if in.ProgressCallback != nil {
-				percent := float64(i+1) * 100.0 / float64(totalTargets)
-				in.ProgressCallback(t.OriginalSource, value_objects.SyncStageDistributing, r.TargetName, percent)
-			}
+			percent := float64(i+1) * 100.0 / float64(totalTargets)
+			progress.NotifyDistributing(t.OriginalSource, r.TargetName, percent)
 		}
 
 		// Update task state based on results

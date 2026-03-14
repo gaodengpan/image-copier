@@ -20,11 +20,12 @@ const (
 )
 
 type APIAdapter struct {
-	httpClient *http.Client
-	token      string
-	owner      string
-	repo       string
-	workflowID string
+	httpClient     *http.Client
+	requestBuilder *GitHubRequestBuilder
+	token          string
+	owner          string
+	repo           string
+	workflowID     string
 }
 
 func NewAPIAdapter(httpClient *http.Client, token, owner, repo, workflowID string) *APIAdapter {
@@ -32,11 +33,12 @@ func NewAPIAdapter(httpClient *http.Client, token, owner, repo, workflowID strin
 		httpClient = &http.Client{Timeout: 30 * time.Second}
 	}
 	return &APIAdapter{
-		httpClient: httpClient,
-		token:      token,
-		owner:      owner,
-		repo:       repo,
-		workflowID: workflowID,
+		httpClient:     httpClient,
+		requestBuilder: NewGitHubRequestBuilder(token),
+		token:          token,
+		owner:          owner,
+		repo:           repo,
+		workflowID:     workflowID,
 	}
 }
 
@@ -99,10 +101,7 @@ func (a *APIAdapter) TriggerWorkflow(ctx context.Context, owner, repo, workflowI
 		return "", errors.NewGitHubError("TriggerWorkflow", "failed to create request", 0, err)
 	}
 
-	req.Header.Set("Accept", GitHubMediaType)
-	req.Header.Set("Authorization", "Bearer "+a.token)
-	req.Header.Set("X-GitHub-Api-Version", GitHubAPIVersion)
-	req.Header.Set("Content-Type", "application/json")
+	a.requestBuilder.SetJSONHeaders(req)
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
@@ -125,14 +124,10 @@ func (a *APIAdapter) GetWorkflowStatus(ctx context.Context, owner, repo, runID s
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/runs/%s",
 		owner, repo, runID)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := a.requestBuilder.BuildGetRequest(url)
 	if err != nil {
 		return "", errors.NewGitHubError("GetWorkflowStatus", "failed to create request", 0, err)
 	}
-
-	req.Header.Set("Accept", GitHubMediaType)
-	req.Header.Set("Authorization", "Bearer "+a.token)
-	req.Header.Set("X-GitHub-Api-Version", GitHubAPIVersion)
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
@@ -212,15 +207,11 @@ func (a *APIAdapter) findWorkflowRunID(ctx context.Context, owner, repo, workflo
 		case <-timeoutCtx.Done():
 			return "", errors.NewGitHubError("findWorkflowRunID", "workflow run not found after timeout", 0, nil)
 		case <-ticker.C:
-			req, err := http.NewRequestWithContext(timeoutCtx, "GET", url, nil)
+			req, err := a.requestBuilder.BuildGetRequestWithContext(timeoutCtx, url)
 			if err != nil {
 				ticker.Reset(time.Second)
 				continue
 			}
-
-			req.Header.Set("Accept", GitHubMediaType)
-			req.Header.Set("Authorization", "Bearer "+a.token)
-			req.Header.Set("X-GitHub-Api-Version", GitHubAPIVersion)
 
 			resp, err := a.httpClient.Do(req)
 			if err != nil {
