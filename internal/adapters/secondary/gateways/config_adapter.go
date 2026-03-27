@@ -65,6 +65,7 @@ func (a *ConfigAdapter) GetPrivateRegistry(name string) *output.PrivateRegistryC
 		Host:     reg.Host,
 		Username: reg.Username,
 		Password: reg.Password,
+		Insecure: reg.Insecure,
 	}
 }
 
@@ -78,7 +79,7 @@ func (a *ConfigAdapter) BuildTargets(targetNames []string) []*value_objects.Dist
 		} else {
 			reg := a.GetPrivateRegistry(name)
 			if reg != nil {
-				target, err := value_objects.NewRegistryTarget(reg.Name, reg.Host, reg.Username, reg.Password)
+				target, err := value_objects.NewRegistryTarget(reg.Name, reg.Host, reg.Username, reg.Password, reg.Insecure, reg.MirrorMode)
 				if err != nil {
 					if a.logger != nil {
 						a.logger.Warn(fmt.Sprintf("failed to create registry target %q: %v", name, err))

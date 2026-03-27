@@ -117,10 +117,12 @@ type Distribution struct {
 
 // PrivateRegistry holds configuration for a private registry
 type PrivateRegistry struct {
-	Name     string `mapstructure:"name"`
-	Host     string `mapstructure:"host"`
-	Username string `mapstructure:"username"`
-	Password string `mapstructure:"password"`
+	Name       string `mapstructure:"name"`
+	Host       string `mapstructure:"host"`
+	Username   string `mapstructure:"username"`
+	Password   string `mapstructure:"password"`
+	Insecure   bool   `mapstructure:"insecure"`
+	MirrorMode bool   `mapstructure:"mirror_mode"` // Keep original image names for mirror registries
 }
 
 // GetPrivateRegistryByName returns a private registry by name

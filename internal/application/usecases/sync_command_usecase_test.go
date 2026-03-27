@@ -242,7 +242,7 @@ func TestSyncCommandUseCase_Execute_DistributeWithErrors(t *testing.T) {
 
 	// Setup distribute phase with error
 	m.syncConfig.On("GetDistributionTargets", []string{"registry1"}).Return([]string{"registry1"})
-	registryTarget, _ := value_objects.NewRegistryTarget("registry1", "registry1.example.com", "user", "pass")
+	registryTarget, _ := value_objects.NewRegistryTarget("registry1", "registry1.example.com", "user", "pass", false, false)
 	m.targetBuilder.On("BuildTargets", []string{"registry1"}).Return([]*value_objects.DistributionTarget{registryTarget})
 
 	task := entities.NewDistributeTask("staging.registry.com/ns/nginx:latest", "nginx:latest", "amd64", "linux", []string{"registry1"})

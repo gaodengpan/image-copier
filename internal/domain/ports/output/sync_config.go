@@ -4,10 +4,12 @@ import "github.com/gaodengpan/image-copier/internal/domain/value_objects"
 
 // PrivateRegistryConfig represents configuration for a private registry
 type PrivateRegistryConfig struct {
-	Name     string
-	Host     string
-	Username string
-	Password string
+	Name       string
+	Host       string
+	Username   string
+	Password   string
+	Insecure   bool
+	MirrorMode bool // Keep original image names for mirror registries
 }
 
 // SyncConfig provides configuration needed for sync operations

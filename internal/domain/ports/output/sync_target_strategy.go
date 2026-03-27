@@ -17,10 +17,13 @@ type SyncTargetOptions struct {
 	SourceRegistryUsername string
 	SourceRegistryPassword string
 	SourceRegistryNS       string
+	SourceInsecure         bool
 
 	TargetRegistryHost     string
 	TargetRegistryUsername string
 	TargetRegistryPassword string
+	TargetInsecure         bool
+	TargetMirrorMode       bool // Keep original image names
 }
 
 type SyncTargetStrategy interface {

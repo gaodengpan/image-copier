@@ -14,11 +14,13 @@ const (
 
 // DistributionTarget represents a target for image distribution
 type DistributionTarget struct {
-	name     string
-	typ      TargetType
-	host     string // Empty for docker target
-	username string
-	password string
+	name       string
+	typ        TargetType
+	host       string // Empty for docker target
+	username   string
+	password   string
+	insecure   bool
+	mirrorMode bool // Keep original image names
 }
 
 // NewDockerTarget creates a new Docker distribution target
@@ -30,7 +32,7 @@ func NewDockerTarget() *DistributionTarget {
 }
 
 // NewRegistryTarget creates a new Registry distribution target
-func NewRegistryTarget(name, host, username, password string) (*DistributionTarget, error) {
+func NewRegistryTarget(name, host, username, password string, insecure, mirrorMode bool) (*DistributionTarget, error) {
 	if name == "" {
 		return nil, sharederrors.NewValidationError("name", "registry target name is required")
 	}
@@ -38,11 +40,13 @@ func NewRegistryTarget(name, host, username, password string) (*DistributionTarg
 		return nil, sharederrors.NewValidationError("host", "registry target host is required")
 	}
 	return &DistributionTarget{
-		name:     name,
-		typ:      TargetTypeRegistry,
-		host:     host,
-		username: username,
-		password: password,
+		name:       name,
+		typ:        TargetTypeRegistry,
+		host:       host,
+		username:   username,
+		password:   password,
+		insecure:   insecure,
+		mirrorMode: mirrorMode,
 	}, nil
 }
 
@@ -69,6 +73,16 @@ func (t *DistributionTarget) Username() string {
 // Password returns the target password
 func (t *DistributionTarget) Password() string {
 	return t.password
+}
+
+// Insecure returns whether to skip TLS verification
+func (t *DistributionTarget) Insecure() bool {
+	return t.insecure
+}
+
+// MirrorMode returns whether to keep original image names
+func (t *DistributionTarget) MirrorMode() bool {
+	return t.mirrorMode
 }
 
 // String returns a string representation of the target

@@ -23,6 +23,7 @@ type DistributionOptions struct {
 	SourceRegistryNS   string
 	SourceRegistryUser string
 	SourceRegistryPass string
+	SourceInsecure     bool
 
 	// Target information
 	TargetName         string
@@ -30,6 +31,8 @@ type DistributionOptions struct {
 	TargetRegistryHost string // Empty for docker target
 	TargetRegistryUser string
 	TargetRegistryPass string
+	TargetInsecure     bool
+	TargetMirrorMode   bool // Keep original image names
 
 	// Force re-distribution even if image exists
 	Force bool
@@ -43,9 +46,12 @@ func (o DistributionOptions) ToSyncTargetOptions() SyncTargetOptions {
 		SourceRegistryNS:       o.SourceRegistryNS,
 		SourceRegistryUsername: o.SourceRegistryUser,
 		SourceRegistryPassword: o.SourceRegistryPass,
+		SourceInsecure:         o.SourceInsecure,
 		TargetRegistryHost:     o.TargetRegistryHost,
 		TargetRegistryUsername: o.TargetRegistryUser,
 		TargetRegistryPassword: o.TargetRegistryPass,
+		TargetInsecure:         o.TargetInsecure,
+		TargetMirrorMode:       o.TargetMirrorMode,
 	}
 }
 

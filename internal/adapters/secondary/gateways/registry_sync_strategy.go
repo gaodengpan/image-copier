@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/gaodengpan/image-copier/internal/domain/ports/output"
@@ -46,33 +47,43 @@ func (s *RegistrySyncStrategy) SyncFromRegistry(ctx context.Context, opts output
 		RegistryNamespace: opts.SourceRegistryNS,
 	})
 
-	targetImageID := s.buildTargetImageID(opts.TargetRegistryHost, opts.SourceImageID)
+	targetImageID := s.buildTargetImageID(opts.TargetRegistryHost, opts.SourceImageID, opts.TargetMirrorMode)
 
 	ctx, cancel := context.WithTimeout(ctx, s.syncOperationTimeout)
 	defer cancel()
 
 	// Create temp auth files for source and destination
-	// Use empty string as registry key to match any registry (skopeo will use the first available auth)
-	srcAuthFile, err := auth.CreateAuthFile("", opts.SourceRegistryUsername, opts.SourceRegistryPassword)
+	// Use the actual registry host as the key for proper credential matching
+	srcAuthFile, err := auth.CreateAuthFile(opts.SourceRegistryHost, opts.SourceRegistryUsername, opts.SourceRegistryPassword)
 	if err != nil {
 		return errors.NewRegistryError("SyncFromRegistry", "failed to create source auth file", err)
 	}
 	defer os.Remove(srcAuthFile)
 
-	destAuthFile, err := auth.CreateAuthFile("", opts.TargetRegistryUsername, opts.TargetRegistryPassword)
+	destAuthFile, err := auth.CreateAuthFile(opts.TargetRegistryHost, opts.TargetRegistryUsername, opts.TargetRegistryPassword)
 	if err != nil {
 		return errors.NewRegistryError("SyncFromRegistry", "failed to create destination auth file", err)
 	}
 	defer os.Remove(destAuthFile)
 
 	// Use --src-authfile and --dest-authfile to pass credentials securely
-	cmd := s.commandRunner(ctx, SkopeoCommand,
+	args := []string{
 		"copy",
 		"--src-authfile", srcAuthFile,
 		"--dest-authfile", destAuthFile,
-		"docker://"+sourceImageID,
-		"docker://"+targetImageID,
-	)
+	}
+
+	// Add TLS verification flags for insecure registries
+	if opts.SourceInsecure {
+		args = append(args, "--src-tls-verify=false")
+	}
+	if opts.TargetInsecure {
+		args = append(args, "--dest-tls-verify=false")
+	}
+
+	args = append(args, "docker://"+sourceImageID, "docker://"+targetImageID)
+
+	cmd := s.commandRunner(ctx, SkopeoCommand, args...)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -85,7 +96,7 @@ func (s *RegistrySyncStrategy) SyncFromRegistry(ctx context.Context, opts output
 }
 
 func (s *RegistrySyncStrategy) ExistsInTarget(ctx context.Context, opts output.SyncTargetOptions) (bool, error) {
-	targetImageID := s.buildTargetImageID(opts.TargetRegistryHost, opts.SourceImageID)
+	targetImageID := s.buildTargetImageID(opts.TargetRegistryHost, opts.SourceImageID, opts.TargetMirrorMode)
 	return s.registryClient.ImageExists(ctx, output.RegistryAuthOptions{
 		ImageID:  targetImageID,
 		Username: opts.TargetRegistryUsername,
@@ -113,7 +124,20 @@ func (s *RegistrySyncStrategy) TargetType() value_objects.TargetType {
 	return value_objects.TargetTypeRegistry
 }
 
-func (s *RegistrySyncStrategy) buildTargetImageID(registryHost, sourceImageID string) string {
+func (s *RegistrySyncStrategy) buildTargetImageID(registryHost, sourceImageID string, mirrorMode bool) string {
+	// For mirror mode, keep original image name format
+	if mirrorMode {
+		// Remove docker.io/library/ prefix for Docker Hub images
+		// e.g., docker.io/library/nginx:alpine -> nginx:alpine
+		imageName := sourceImageID
+		if strings.HasPrefix(imageName, "docker.io/library/") {
+			imageName = strings.TrimPrefix(imageName, "docker.io/library/")
+		} else if strings.HasPrefix(imageName, "docker.io/") {
+			imageName = strings.TrimPrefix(imageName, "docker.io/")
+		}
+		return registryHost + "/" + imageName
+	}
+	// For non-mirror mode, use the normalized format
 	return s.registryClient.BuildDestImageID(output.BuildDestOptions{
 		SourceID:     sourceImageID,
 		RegistryHost: registryHost,

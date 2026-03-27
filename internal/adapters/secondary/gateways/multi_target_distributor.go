@@ -127,6 +127,8 @@ func (d *MultiTargetDistributor) distributeToTarget(
 		TargetRegistryHost: target.Host(),
 		TargetRegistryUser: target.Username(),
 		TargetRegistryPass: target.Password(),
+		TargetInsecure:     target.Insecure(),
+		TargetMirrorMode:   target.MirrorMode(),
 		Force:              force,
 	}
 

@@ -80,7 +80,7 @@ func TestMultiTargetDistributor_DistributeToAll_RegistryTarget(t *testing.T) {
 	distributor := NewMultiTargetDistributor(nil, registryStrategy, logger)
 
 	task := entities.NewDistributeTask("test-image:latest", "nginx:latest", "amd64", "linux", []string{"my-registry"})
-	registryTarget, _ := value_objects.NewRegistryTarget("my-registry", "registry.example.com", "user", "pass")
+	registryTarget, _ := value_objects.NewRegistryTarget("my-registry", "registry.example.com", "user", "pass", false, false)
 	targets := []*value_objects.DistributionTarget{registryTarget}
 
 	result := distributor.DistributeToAll(
@@ -217,7 +217,7 @@ func TestMultiTargetDistributor_DistributeToAll_MultipleTargets(t *testing.T) {
 
 	task := entities.NewDistributeTask("test-image:latest", "nginx:latest", "amd64", "linux", []string{"docker", "my-registry"})
 	dockerTarget := value_objects.NewDockerTarget()
-	registryTarget, _ := value_objects.NewRegistryTarget("my-registry", "registry.example.com", "user", "pass")
+	registryTarget, _ := value_objects.NewRegistryTarget("my-registry", "registry.example.com", "user", "pass", false, false)
 	targets := []*value_objects.DistributionTarget{dockerTarget, registryTarget}
 
 	result := distributor.DistributeToAll(
@@ -257,7 +257,7 @@ func TestMultiTargetDistributor_DistributeToAll_PartialFailure(t *testing.T) {
 
 	task := entities.NewDistributeTask("test-image:latest", "nginx:latest", "amd64", "linux", []string{"docker", "my-registry"})
 	dockerTarget := value_objects.NewDockerTarget()
-	registryTarget, _ := value_objects.NewRegistryTarget("my-registry", "registry.example.com", "user", "pass")
+	registryTarget, _ := value_objects.NewRegistryTarget("my-registry", "registry.example.com", "user", "pass", false, false)
 	targets := []*value_objects.DistributionTarget{dockerTarget, registryTarget}
 
 	result := distributor.DistributeToAll(
