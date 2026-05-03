@@ -138,11 +138,16 @@ func (c *Config) GetPrivateRegistryByName(name string) *PrivateRegistry {
 // GetDistributionTargets returns the list of distribution targets
 // If the provided targets list is not empty, it returns that list.
 // Otherwise, it returns the default targets from the configuration.
+// If neither are specified, it defaults to ["docker"] for local Docker import.
 func (c *Config) GetDistributionTargets(targets []string) []string {
 	if len(targets) > 0 {
 		return targets
 	}
-	return c.Distribution.DefaultTargets
+	if len(c.Distribution.DefaultTargets) > 0 {
+		return c.Distribution.DefaultTargets
+	}
+	// Default to importing to local Docker when no targets are specified
+	return []string{"docker"}
 }
 
 // ParseRetryConfig converts string-based Retry config fields into a typed *retry.Config.

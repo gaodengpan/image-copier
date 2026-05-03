@@ -50,6 +50,23 @@ func TestConfigAdapter_GetDistributionTargets(t *testing.T) {
 	assert.Equal(t, []string{"docker", "registry1"}, targets)
 }
 
+func TestConfigAdapter_GetDistributionTargets_DefaultDocker(t *testing.T) {
+	// When no targets are specified and no default targets in config,
+	// it should default to ["docker"]
+	cfg := &config.Config{}
+	// No default targets configured
+
+	adapter := NewConfigAdapter(cfg, &mockLogger{})
+
+	// Without explicit targets and no config defaults -> defaults to ["docker"]
+	targets := adapter.GetDistributionTargets(nil)
+	assert.Equal(t, []string{"docker"}, targets)
+
+	// Empty slice should also trigger the default
+	targets = adapter.GetDistributionTargets([]string{})
+	assert.Equal(t, []string{"docker"}, targets)
+}
+
 func TestConfigAdapter_GetPrivateRegistry(t *testing.T) {
 	cfg := &config.Config{
 		PrivateRegistries: []config.PrivateRegistry{
