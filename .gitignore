@@ -24,6 +24,8 @@ Thumbs.db
 .tdd-cycle
 
 openspec
+docs
+.omc
 .specify/contexts
 .specify/scripts.specify/.current-feature
 .specify/specs

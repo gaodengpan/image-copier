@@ -30,16 +30,12 @@ func newConfigShowCommandWithProvider(provider config.ConfigProvider) *cobra.Com
 		Short: "Show current configuration",
 		Long:  `Display the current configuration being used`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Only try to get config path if provider supports it
-			if vcp, ok := provider.(*config.ViperConfigProvider); ok {
-				path := vcp.GetConfigPath()
-				if path != "" {
-					fmt.Printf("Using config file: %s\n\n", path)
-				} else {
-					fmt.Println("No config file found, using environment variables only")
-				}
+			// Get config path through the interface method
+			path := provider.GetConfigPath()
+			if path != "" {
+				fmt.Printf("Using config file: %s\n\n", path)
 			} else {
-				fmt.Println("Using provided configuration (no file path available)")
+				fmt.Println("No config file found, using environment variables only")
 			}
 
 			cfg, err := provider.Load()
