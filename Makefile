@@ -31,12 +31,11 @@ test-coverage-html: ## Generate HTML coverage report
 	@echo "HTML coverage report saved to coverage.html"
 	@echo "Open coverage.html in your browser to view the report"
 
-install: ## Install the binary to /usr/local/bin
-	go build -ldflags "$(LDFLAGS)" -o ${NAME} ./cmd/${NAME}
-	sudo mv ${NAME} /usr/local/bin/
+install: ## Install the binary to GOBIN (default: $GOPATH/bin)
+	go install -ldflags "$(LDFLAGS)" ./cmd/${NAME}
 
-uninstall: ## Uninstall the binary from /usr/local/bin
-	sudo rm -f /usr/local/bin/${NAME}
+uninstall: ## Uninstall the binary from GOBIN (default: $GOPATH/bin)
+	rm -f $(shell go env GOPATH)/bin/${NAME}
 
 clean: ## Clean build artifacts
 	rm -f ${NAME}
