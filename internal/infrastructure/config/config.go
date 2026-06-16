@@ -76,7 +76,6 @@ func (vp *ViperConfigProvider) Load() (*Config, error) {
 
 	vp.viper.SetConfigType("yaml")
 	vp.viper.SetConfigName("config")
-	vp.viper.AddConfigPath(".")         // current directory
 	vp.viper.AddConfigPath(configDir()) // user's config directory
 
 	// Read config file
@@ -114,9 +113,9 @@ func (vp *ViperConfigProvider) LoadWithPaths(configPath string) (*Config, error)
 		vp.viper.SetConfigName(configName)
 		vp.viper.AddConfigPath(dir)
 	} else {
-		// Only add current directory to avoid global config interference
+		// Only use user config directory to avoid loading from arbitrary paths
 		vp.viper.SetConfigName("config")
-		vp.viper.AddConfigPath(".")
+		vp.viper.AddConfigPath(configDir())
 	}
 
 	// Read config file

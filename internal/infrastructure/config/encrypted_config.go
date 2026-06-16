@@ -47,7 +47,6 @@ func (evp *EncryptedViperConfigProvider) Load() (*Config, error) {
 
 	evp.viper.SetConfigType("yaml")
 	evp.viper.SetConfigName("config")
-	evp.viper.AddConfigPath(".")         // current directory
 	evp.viper.AddConfigPath(configDir()) // user's config directory
 
 	// Read config file
@@ -163,9 +162,9 @@ func (evp *EncryptedViperConfigProvider) LoadWithPaths(configPath string) (*Conf
 		evp.viper.SetConfigName(configName)
 		evp.viper.AddConfigPath(dir)
 	} else {
-		// Only add current directory to avoid global config interference
+		// Only use user config directory to avoid loading from arbitrary paths
 		evp.viper.SetConfigName("config")
-		evp.viper.AddConfigPath(".")
+		evp.viper.AddConfigPath(configDir())
 	}
 
 	// Read config file
