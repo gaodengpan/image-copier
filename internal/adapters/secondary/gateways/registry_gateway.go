@@ -2,6 +2,7 @@ package gateways
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,7 +13,7 @@ import (
 	"github.com/gaodengpan/image-copier/internal/domain/validators"
 	"github.com/gaodengpan/image-copier/internal/domain/value_objects"
 	"github.com/gaodengpan/image-copier/internal/shared/auth"
-	"github.com/gaodengpan/image-copier/internal/shared/errors"
+	sharederrors "github.com/gaodengpan/image-copier/internal/shared/errors"
 	"github.com/gaodengpan/image-copier/internal/shared/sanitizer"
 )
 
@@ -69,12 +70,18 @@ func (a *SkopeoAdapter) buildSkopeoCmdWithAuth(ctx context.Context, authFile str
 	return cmd
 }
 
-// withAuthFile creates a temp auth file and calls fn with it, cleaning up afterward
+// errAuthFileCreation is a sentinel error used to distinguish auth file creation
+// failures from callback execution failures in withAuthFile.
+var errAuthFileCreation = errors.New("auth file creation failed")
+
+// withAuthFile creates a temp auth file and calls fn with it, cleaning up afterward.
+// Auth file creation errors are wrapped with errAuthFileCreation sentinel so callers
+// can distinguish them from callback execution errors via errors.Is.
 func (a *SkopeoAdapter) withAuthFile(imageID, username, password string, fn func(authFile string) error) error {
 	registry := extractRegistry(imageID)
 	authFile, err := auth.CreateAuthFile(registry, username, password)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %v", errAuthFileCreation, err)
 	}
 	defer os.Remove(authFile)
 	return fn(authFile)
@@ -82,11 +89,11 @@ func (a *SkopeoAdapter) withAuthFile(imageID, username, password string, fn func
 
 func (a *SkopeoAdapter) ImageExists(ctx context.Context, opts output.RegistryAuthOptions) (bool, error) {
 	if !a.validator.IsValidImageName(opts.ImageID) {
-		return false, errors.NewRegistryError("ImageExists", "invalid image name", nil)
+		return false, sharederrors.NewRegistryError("ImageExists", "invalid image name", nil)
 	}
 
 	if !a.validator.ValidateCredentials(opts.Username, opts.Password) {
-		return false, errors.NewRegistryError("ImageExists", "invalid credentials", nil)
+		return false, sharederrors.NewRegistryError("ImageExists", "invalid credentials", nil)
 	}
 
 	var result bool
@@ -102,14 +109,17 @@ func (a *SkopeoAdapter) ImageExists(ctx context.Context, opts output.RegistryAut
 				result = false
 				return nil
 			}
-			return errors.NewRegistryError("ImageExists", "failed to check image", err)
+			return sharederrors.NewRegistryError("ImageExists", "failed to check image", err)
 		}
 
 		result = true
 		return nil
 	})
 	if err != nil {
-		return false, errors.NewRegistryError("ImageExists", "failed to create auth file", err)
+		if errors.Is(err, errAuthFileCreation) {
+			return false, sharederrors.NewRegistryError("ImageExists", "failed to create auth file", err)
+		}
+		return false, err
 	}
 
 	return result, nil
@@ -117,14 +127,14 @@ func (a *SkopeoAdapter) ImageExists(ctx context.Context, opts output.RegistryAut
 
 func (a *SkopeoAdapter) SaveImageToFile(ctx context.Context, opts output.RegistrySaveOptions) error {
 	if !a.validator.IsValidImageName(opts.ImageID) {
-		return errors.NewRegistryError("SaveImageToFile", "invalid image name", nil)
+		return sharederrors.NewRegistryError("SaveImageToFile", "invalid image name", nil)
 	}
 	if !a.validator.ValidateFilePath(opts.OutputPath) {
-		return errors.NewRegistryError("SaveImageToFile", "invalid file path", nil)
+		return sharederrors.NewRegistryError("SaveImageToFile", "invalid file path", nil)
 	}
 
 	if !a.validator.ValidateCredentials(opts.Username, opts.Password) {
-		return errors.NewRegistryError("SaveImageToFile", "invalid credentials", nil)
+		return sharederrors.NewRegistryError("SaveImageToFile", "invalid credentials", nil)
 	}
 
 	err := a.withAuthFile(opts.ImageID, opts.Username, opts.Password, func(authFile string) error {
@@ -133,13 +143,16 @@ func (a *SkopeoAdapter) SaveImageToFile(ctx context.Context, opts output.Registr
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			safeOutput := sanitizer.SanitizeError(string(output), 500)
-			return errors.NewRegistryError("SaveImageToFile", fmt.Sprintf("failed to save image: %s", safeOutput), err)
+			return sharederrors.NewRegistryError("SaveImageToFile", fmt.Sprintf("failed to save image: %s", safeOutput), err)
 		}
 
 		return nil
 	})
 	if err != nil {
-		return errors.NewRegistryError("SaveImageToFile", "failed to create auth file", err)
+		if errors.Is(err, errAuthFileCreation) {
+			return sharederrors.NewRegistryError("SaveImageToFile", "failed to create auth file", err)
+		}
+		return err
 	}
 
 	return nil
@@ -152,15 +165,15 @@ func (a *SkopeoAdapter) BuildDestImageID(opts output.BuildDestOptions) string {
 // SaveImageToWriter saves a registry image to a writer using streaming
 func (a *SkopeoAdapter) SaveImageToWriter(ctx context.Context, opts output.RegistrySaveOptions) error {
 	if !a.validator.IsValidImageName(opts.ImageID) {
-		return errors.NewRegistryError("SaveImageToWriter", "invalid image name", nil)
+		return sharederrors.NewRegistryError("SaveImageToWriter", "invalid image name", nil)
 	}
 
 	if !a.validator.ValidateCredentials(opts.Username, opts.Password) {
-		return errors.NewRegistryError("SaveImageToWriter", "invalid credentials", nil)
+		return sharederrors.NewRegistryError("SaveImageToWriter", "invalid credentials", nil)
 	}
 
 	if opts.Writer == nil {
-		return errors.NewRegistryError("SaveImageToWriter", "writer is required", nil)
+		return sharederrors.NewRegistryError("SaveImageToWriter", "writer is required", nil)
 	}
 
 	err := a.withAuthFile(opts.ImageID, opts.Username, opts.Password, func(authFile string) error {
@@ -169,13 +182,16 @@ func (a *SkopeoAdapter) SaveImageToWriter(ctx context.Context, opts output.Regis
 		cmd.Stderr = os.Stderr // Redirect stderr to show progress
 
 		if err := cmd.Run(); err != nil {
-			return errors.NewRegistryError("SaveImageToWriter", fmt.Sprintf("failed to save image to writer: %v", err), err)
+			return sharederrors.NewRegistryError("SaveImageToWriter", fmt.Sprintf("failed to save image to writer: %v", err), err)
 		}
 
 		return nil
 	})
 	if err != nil {
-		return errors.NewRegistryError("SaveImageToWriter", "failed to create auth file", err)
+		if errors.Is(err, errAuthFileCreation) {
+			return sharederrors.NewRegistryError("SaveImageToWriter", "failed to create auth file", err)
+		}
+		return err
 	}
 
 	return nil
