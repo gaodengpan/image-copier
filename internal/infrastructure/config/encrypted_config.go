@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/gaodengpan/image-copier/internal/infrastructure/encryption"
 	"github.com/spf13/viper"
@@ -75,6 +76,38 @@ func (evp *EncryptedViperConfigProvider) Load() (*Config, error) {
 	return decryptedCfg, nil
 }
 
+// generateDecryptionDiagnostics creates a detailed diagnostic message for decryption failures
+// without exposing sensitive data
+func generateDecryptionDiagnostics(field, value string) string {
+	var diagnostics []string
+
+	// Check if ENCRYPT_KEY is set
+	if os.Getenv("ENCRYPT_KEY") == "" {
+		diagnostics = append(diagnostics, "ENCRYPT_KEY environment variable is not set")
+	} else {
+		diagnostics = append(diagnostics, "ENCRYPT_KEY is set")
+	}
+
+	// Check value format without exposing content
+	if value == "" {
+		diagnostics = append(diagnostics, "field value is empty")
+	} else if encryption.IsEncryptedValue(value) {
+		diagnostics = append(diagnostics, "field value is in encrypted format")
+	} else {
+		diagnostics = append(diagnostics, "field value is in plaintext format")
+	}
+
+	// Add config file location
+	if configPath := GetConfigPath(); configPath != "" {
+		diagnostics = append(diagnostics, fmt.Sprintf("config file: %s", configPath))
+	}
+
+	return fmt.Sprintf("decryption failed for field '%s'. Diagnostics: %s. "+
+		"Please verify ENCRYPT_KEY matches the key used for encryption. "+
+		"If using plaintext, ensure the value doesn't start with 'encrypted:'",
+		field, strings.Join(diagnostics, "; "))
+}
+
 // decryptConfig decrypts sensitive fields in the configuration
 func (evp *EncryptedViperConfigProvider) decryptConfig(cfg *Config) (*Config, error) {
 	decryptor := encryption.NewConfigDecryptor()
@@ -83,7 +116,7 @@ func (evp *EncryptedViperConfigProvider) decryptConfig(cfg *Config) (*Config, er
 	decryptedToken, err := decryptor.DecryptValue(cfg.Github.Token)
 	if err != nil {
 		return nil, &encryption.DecryptionError{
-			Message: "decryption failed, possibly due to incorrect key or corrupted data",
+			Message: generateDecryptionDiagnostics("github.token", cfg.Github.Token),
 			Field:   "github.token",
 			Cause:   err,
 		}
@@ -94,7 +127,7 @@ func (evp *EncryptedViperConfigProvider) decryptConfig(cfg *Config) (*Config, er
 	decryptedUsername, err := decryptor.DecryptValue(cfg.Registry.Username)
 	if err != nil {
 		return nil, &encryption.DecryptionError{
-			Message: "decryption failed, possibly due to incorrect key or corrupted data",
+			Message: generateDecryptionDiagnostics("registry.username", cfg.Registry.Username),
 			Field:   "registry.username",
 			Cause:   err,
 		}
@@ -105,7 +138,7 @@ func (evp *EncryptedViperConfigProvider) decryptConfig(cfg *Config) (*Config, er
 	decryptedPassword, err := decryptor.DecryptValue(cfg.Registry.Password)
 	if err != nil {
 		return nil, &encryption.DecryptionError{
-			Message: "decryption failed, possibly due to incorrect key or corrupted data",
+			Message: generateDecryptionDiagnostics("registry.password", cfg.Registry.Password),
 			Field:   "registry.password",
 			Cause:   err,
 		}

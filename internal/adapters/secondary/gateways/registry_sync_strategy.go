@@ -88,8 +88,17 @@ func (s *RegistrySyncStrategy) SyncFromRegistry(ctx context.Context, opts output
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		safeOutput := sanitizer.SanitizeError(string(output), 500)
-		return errors.NewRegistryError("SyncFromRegistry",
+		baseErr := errors.NewRegistryError("SyncFromRegistry",
 			fmt.Sprintf("failed to sync image from %s to %s: %s", sourceImageID, targetImageID, safeOutput), err)
+
+		// Add diagnostics for authentication errors
+		if isAuthenticationError(err) || strings.Contains(safeOutput, "access is denied") || strings.Contains(safeOutput, "unauthorized") {
+			diagMsg := generateAuthErrorDiagnostics(opts.SourceRegistryHost, opts.SourceRegistryUsername)
+			passwordWarning := checkPasswordFormat(opts.SourceRegistryPassword)
+			return fmt.Errorf("%w%s%s", baseErr, diagMsg, passwordWarning)
+		}
+
+		return baseErr
 	}
 
 	return nil

@@ -3,9 +3,12 @@ package gateways
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/gaodengpan/image-copier/internal/domain/ports/output"
 	"github.com/gaodengpan/image-copier/internal/domain/value_objects"
+	"github.com/gaodengpan/image-copier/internal/infrastructure/encryption"
 )
 
 type DockerSyncStrategy struct {
@@ -24,6 +27,72 @@ func NewDockerSyncStrategy(
 		registryClient: registryClient,
 		fileSystem:     fileSystem,
 	}
+}
+
+// isAuthenticationError checks if the error indicates an authentication failure
+func isAuthenticationError(err error) bool {
+	errMsg := strings.ToLower(err.Error())
+	authKeywords := []string{
+		"access is denied",
+		"unauthorized",
+		"authentication required",
+		"invalid credentials",
+		"401",
+		"403",
+	}
+
+	for _, keyword := range authKeywords {
+		if strings.Contains(errMsg, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+// generateAuthErrorDiagnostics creates diagnostic information for authentication failures
+func generateAuthErrorDiagnostics(registryHost, username string) string {
+	var diagnostics []string
+
+	diagnostics = append(diagnostics, fmt.Sprintf("registry: %s", registryHost))
+
+	if username == "" {
+		diagnostics = append(diagnostics, "username: (empty)")
+	} else {
+		// Only show first 2 characters of username for privacy
+		if len(username) > 2 {
+			diagnostics = append(diagnostics, fmt.Sprintf("username: %s***", username[:2]))
+		} else {
+			diagnostics = append(diagnostics, "username: ***")
+		}
+	}
+
+	// Check ENCRYPT_KEY status
+	encryptKey := os.Getenv("ENCRYPT_KEY")
+	if encryptKey == "" {
+		diagnostics = append(diagnostics, "ENCRYPT_KEY: not set")
+	} else {
+		diagnostics = append(diagnostics, "ENCRYPT_KEY: set")
+	}
+
+	return fmt.Sprintf("\nAuthentication diagnostic info: %s",
+		strings.Join(diagnostics, ", "))
+}
+
+// checkPasswordFormat checks if the password looks like it might be corrupted
+func checkPasswordFormat(password string) string {
+	if password == "" {
+		return "\nWarning: password is empty"
+	}
+
+	// Check if password starts with "encrypted:" but isn't valid
+	if strings.HasPrefix(password, "encrypted:") {
+		if !encryption.IsValidEncryptedFormat(password) {
+			return "\nWarning: password has 'encrypted:' prefix but is not valid encrypted format. " +
+				"Please re-encrypt your configuration or use plaintext password."
+		}
+	}
+
+	return ""
 }
 
 func (s *DockerSyncStrategy) SyncFromRegistry(ctx context.Context, opts output.SyncTargetOptions) error {
@@ -52,7 +121,16 @@ func (s *DockerSyncStrategy) SyncFromRegistry(ctx context.Context, opts output.S
 		Username:   opts.SourceRegistryUsername,
 		Password:   opts.SourceRegistryPassword,
 	}); err != nil {
-		return fmt.Errorf("failed to save image to file: %w", err)
+		baseErr := fmt.Errorf("failed to save image to file: %w", err)
+
+		// Add diagnostics for authentication errors
+		if isAuthenticationError(err) {
+			diagMsg := generateAuthErrorDiagnostics(opts.SourceRegistryHost, opts.SourceRegistryUsername)
+			passwordWarning := checkPasswordFormat(opts.SourceRegistryPassword)
+			return fmt.Errorf("%w%s%s", baseErr, diagMsg, passwordWarning)
+		}
+
+		return baseErr
 	}
 
 	if err := s.dockerClient.LoadImage(ctx, tmpPath); err != nil {
