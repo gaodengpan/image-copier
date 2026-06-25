@@ -10,8 +10,10 @@ import (
 func TestCrossPlatformCompatibility(t *testing.T) {
 	// Set up test password
 	testPassword := "test-password-for-cross-platform-testing"
-	os.Setenv("ENCRYPT_KEY", testPassword)
-	defer os.Unsetenv("ENCRYPT_KEY")
+	_ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", testPassword)
+	defer func() {
+		_ = os.Unsetenv("IMAGE_COPIER_ENCRYPT_KEY")
+	}()
 
 	// Test data to ensure consistency across platforms
 	testCases := []string{
@@ -57,8 +59,10 @@ func TestKnownCiphertextDecryption(t *testing.T) {
 
 	// This test ensures our algorithm remains stable
 	testPassword := "consistent-test-key-32-chars-long!"
-	os.Setenv("ENCRYPT_KEY", testPassword)
-	defer os.Unsetenv("ENCRYPT_KEY")
+	_ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", testPassword)
+	defer func() {
+		_ = os.Unsetenv("IMAGE_COPIER_ENCRYPT_KEY")
+	}()
 
 	// We'll encrypt a known value and verify we can decrypt it
 	knownPlaintext := "test-data-for-cross-platform-validation"
@@ -84,8 +88,10 @@ func TestKnownCiphertextDecryption(t *testing.T) {
 // don't affect cross-platform compatibility by testing many encryptions of the same value
 func TestRandomGenerationConsistency(t *testing.T) {
 	testPassword := "test-password-for-random-consistency"
-	os.Setenv("ENCRYPT_KEY", testPassword)
-	defer os.Unsetenv("ENCRYPT_KEY")
+	_ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", testPassword)
+	defer func() {
+		_ = os.Unsetenv("IMAGE_COPIER_ENCRYPT_KEY")
+	}()
 
 	originalText := "consistency test string"
 

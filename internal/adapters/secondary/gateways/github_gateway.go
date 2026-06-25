@@ -107,7 +107,9 @@ func (a *APIAdapter) TriggerWorkflow(ctx context.Context, owner, repo, workflowI
 	if err != nil {
 		return "", errors.NewGitHubError("TriggerWorkflow", "failed to send request", 0, err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode == http.StatusNoContent {
 		return a.findWorkflowRunID(ctx, owner, repo, workflowID, inputs["imageId"], inputs["destImageId"], suffix)
@@ -133,7 +135,9 @@ func (a *APIAdapter) GetWorkflowStatus(ctx context.Context, owner, repo, runID s
 	if err != nil {
 		return "", errors.NewGitHubError("GetWorkflowStatus", "failed to send request", 0, err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
@@ -218,7 +222,9 @@ func (a *APIAdapter) findWorkflowRunID(ctx context.Context, owner, repo, workflo
 				ticker.Reset(time.Second)
 				continue
 			}
-			defer resp.Body.Close()
+			defer func() {
+				_ = resp.Body.Close()
+			}()
 
 			if resp.StatusCode == http.StatusOK {
 				var result struct {

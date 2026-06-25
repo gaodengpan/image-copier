@@ -135,7 +135,9 @@ func (a *ExecDockerAdapter) LoadImage(ctx context.Context, tarPath string) error
 	if err != nil {
 		return errors.NewDockerError("LoadImage", fmt.Sprintf("failed to open tar file %s: %v", tarPath, err), err)
 	}
-	defer tarFile.Close()
+	defer func() {
+		_ = tarFile.Close()
+	}()
 
 	return a.LoadImageFromReader(ctx, tarFile)
 }

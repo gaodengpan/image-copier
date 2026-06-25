@@ -199,13 +199,13 @@ log_level: "info"
 
 | 配置项 | 环境变量 |
 |--------|----------|
-| `github.owner` | `GITHUB_OWNER` |
-| `github.repo` | `GITHUB_REPO` |
-| `github.token` | `GITHUB_TOKEN` |
-| `registry.host` | `REGISTRY_HOST` |
-| `registry.username` | `REGISTRY_USERNAME` |
-| `registry.password` | `REGISTRY_PASSWD` |
-| `registry.namespace` | `REGISTRY_NAMESPACE` |
+| `github.owner` | `IMAGE_COPIER_GITHUB_OWNER` |
+| `github.repo` | `IMAGE_COPIER_GITHUB_REPO` |
+| `github.token` | `IMAGE_COPIER_GITHUB_TOKEN` |
+| `registry.host` | `IMAGE_COPIER_REGISTRY_HOST` |
+| `registry.username` | `IMAGE_COPIER_REGISTRY_USERNAME` |
+| `registry.password` | `IMAGE_COPIER_REGISTRY_PASSWD` |
+| `registry.namespace` | `IMAGE_COPIER_REGISTRY_NAMESPACE` |
 
 ### 配置加密
 
@@ -213,13 +213,13 @@ log_level: "info"
 
 ```bash
 # 设置加密密钥
-export ENCRYPT_KEY="your-encryption-key"
+export IMAGE_COPIER_ENCRYPT_KEY="your-encryption-key"
 
 # 初始化配置（自动加密）
 image-copier config init
 
 # 使用时设置相同密钥
-export ENCRYPT_KEY="your-encryption-key"
+export IMAGE_COPIER_ENCRYPT_KEY="your-encryption-key"
 image-copier sync nginx:latest
 ```
 
@@ -294,7 +294,7 @@ pkg/                        # 可复用公共包
 
 | 问题 | 解决方案 |
 |------|----------|
-| 配置加密失败 | 确认 `ENCRYPT_KEY` 未变化，重建配置 |
+| 配置加密失败 | 确认 `IMAGE_COPIER_ENCRYPT_KEY` 未变化，重建配置 |
 | Workflow 触发失败 | 检查 Token 权限（需要 `repo` + `workflow`） |
 | skopeo copy 失败 | 验证 Registry 凭证正确性 |
 | 进度卡住 | GitHub Actions 排队中，等待或检查 Actions 页面 |

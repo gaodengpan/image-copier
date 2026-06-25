@@ -19,7 +19,7 @@ func (a *OSAdapter) CreateTempFile(pattern string) (string, error) {
 		return "", errors.NewFileSystemError("CreateTempFile", "failed to create temp file", err)
 	}
 	tmpPath := tmpFile.Name()
-	tmpFile.Close()
+	_ = tmpFile.Close()
 	return tmpPath, nil
 }
 

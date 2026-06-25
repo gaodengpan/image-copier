@@ -48,7 +48,9 @@ func TestCreateAuthFile(t *testing.T) {
 			}
 
 			require.NoError(t, err)
-			defer os.Remove(filePath)
+			defer func() {
+				_ = os.Remove(filePath)
+			}()
 
 			// Verify file exists
 			_, err = os.Stat(filePath)

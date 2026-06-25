@@ -7,9 +7,9 @@ import (
 
 func TestEncryptDecrypt(t *testing.T) {
 	// Set up environment variable for testing
-	originalKey := os.Getenv("ENCRYPT_KEY")
-	os.Setenv("ENCRYPT_KEY", "test-key-for-unit-tests-32chars")
-	defer os.Setenv("ENCRYPT_KEY", originalKey) // Restore original value
+	originalKey := os.Getenv("IMAGE_COPIER_ENCRYPT_KEY")
+	_ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", "test-key-for-unit-tests-32chars")
+	defer func() { _ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", originalKey) }() // Restore original value
 
 	testValue := "this is a test value to encrypt and decrypt"
 
@@ -75,9 +75,9 @@ func TestIsEncryptedValue(t *testing.T) {
 
 func TestIsValidEncryptedFormat(t *testing.T) {
 	// Set up environment variable for testing
-	originalKey := os.Getenv("ENCRYPT_KEY")
-	os.Setenv("ENCRYPT_KEY", "test-key-for-unit-tests-32chars")
-	defer os.Setenv("ENCRYPT_KEY", originalKey) // Restore original value
+	originalKey := os.Getenv("IMAGE_COPIER_ENCRYPT_KEY")
+	_ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", "test-key-for-unit-tests-32chars")
+	defer func() { _ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", originalKey) }() // Restore original value
 
 	// Valid encrypted value
 	testValue := "test value"

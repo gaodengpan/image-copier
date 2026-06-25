@@ -167,7 +167,7 @@ func (p *HomebrewProgress) renderFinal() {
 	// Clear previous lines only in TTY mode (animation was running)
 	if p.isTerminal {
 		for range p.tasks {
-			fmt.Fprint(p.output, "\033[1A\033[K")
+			_, _ = fmt.Fprint(p.output, "\033[1A\033[K")
 		}
 	}
 
@@ -203,7 +203,7 @@ func (p *HomebrewProgress) renderFinal() {
 		}
 
 		if line != "" {
-			fmt.Fprintln(p.output, line)
+			_, _ = fmt.Fprintln(p.output, line)
 		}
 	}
 }
@@ -229,7 +229,7 @@ func (p *HomebrewProgress) render() {
 
 	// Clear previous lines
 	for range p.tasks {
-		fmt.Fprint(p.output, "\033[1A\033[K")
+		_, _ = fmt.Fprint(p.output, "\033[1A\033[K")
 	}
 
 	// Render each task line
@@ -263,7 +263,7 @@ func (p *HomebrewProgress) render() {
 		}
 
 		if line != "" {
-			fmt.Fprintln(p.output, line)
+			_, _ = fmt.Fprintln(p.output, line)
 		}
 	}
 }

@@ -11,10 +11,10 @@ type ConfigEncryptor struct {
 
 // NewConfigEncryptor creates a new instance of ConfigEncryptor
 func NewConfigEncryptor() (*ConfigEncryptor, error) {
-	password := os.Getenv("ENCRYPT_KEY")
+	password := os.Getenv("IMAGE_COPIER_ENCRYPT_KEY")
 	if password == "" {
 		return nil, &EncryptionError{
-			Message: "ENCRYPT_KEY environment variable not set",
+			Message: "IMAGE_COPIER_ENCRYPT_KEY environment variable not set",
 		}
 	}
 

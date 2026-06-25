@@ -164,9 +164,9 @@ func Decrypt(encryptedText string) (string, error) {
 
 // getPasswordFromEnv retrieves the encryption key from environment variables
 func getPasswordFromEnv() (string, error) {
-	password := os.Getenv("ENCRYPT_KEY")
+	password := os.Getenv("IMAGE_COPIER_ENCRYPT_KEY")
 	if password == "" {
-		return "", errors.New("ENCRYPT_KEY environment variable not set")
+		return "", errors.New("IMAGE_COPIER_ENCRYPT_KEY environment variable not set")
 	}
 	return password, nil
 }

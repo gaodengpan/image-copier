@@ -9,8 +9,10 @@ import (
 // TestRandomSaltGeneration verifies that the random salt generation is working properly
 func TestRandomSaltGeneration(t *testing.T) {
 	testPassword := "test-password-for-random-generation"
-	os.Setenv("ENCRYPT_KEY", testPassword)
-	defer os.Unsetenv("ENCRYPT_KEY")
+	_ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", testPassword)
+	defer func() {
+		_ = os.Unsetenv("IMAGE_COPIER_ENCRYPT_KEY")
+	}()
 
 	// Generate multiple salts and verify they're all different
 	saltSet := make(map[string]bool)
@@ -49,8 +51,10 @@ func TestRandomSaltGeneration(t *testing.T) {
 // TestRandomNonceGeneration verifies that the random nonce generation is working properly
 func TestRandomNonceGeneration(t *testing.T) {
 	testPassword := "test-password-for-nonce-generation"
-	os.Setenv("ENCRYPT_KEY", testPassword)
-	defer os.Unsetenv("ENCRYPT_KEY")
+	_ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", testPassword)
+	defer func() {
+		_ = os.Unsetenv("IMAGE_COPIER_ENCRYPT_KEY")
+	}()
 
 	// We'll reuse the same test as salt generation since nonce is generated similarly
 	TestRandomSaltGeneration(t)
@@ -60,8 +64,10 @@ func TestRandomNonceGeneration(t *testing.T) {
 // to ensure it meets cryptographic security requirements
 func TestRNGSecurityProperties(t *testing.T) {
 	testPassword := "test-password-for-rng-security"
-	os.Setenv("ENCRYPT_KEY", testPassword)
-	defer os.Unsetenv("ENCRYPT_KEY")
+	_ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", testPassword)
+	defer func() {
+		_ = os.Unsetenv("IMAGE_COPIER_ENCRYPT_KEY")
+	}()
 
 	// Test that repeated encryptions produce outputs that appear random
 	// This tests the distribution of output bytes
@@ -105,8 +111,10 @@ func TestRandomBytesGeneration(t *testing.T) {
 	// by verifying that encrypted outputs are sufficiently different
 
 	testPassword := "test-password-for-indirect-rand-test"
-	os.Setenv("ENCRYPT_KEY", testPassword)
-	defer os.Unsetenv("ENCRYPT_KEY")
+	_ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", testPassword)
+	defer func() {
+		_ = os.Unsetenv("IMAGE_COPIER_ENCRYPT_KEY")
+	}()
 
 	// Encrypt the same value multiple times
 	sampleSize := 100
@@ -163,8 +171,10 @@ func TestCryptoRandUsage(t *testing.T) {
 	// by ensuring encrypted values of the same input are different each time
 
 	testPassword := "test-password-for-crypto-rand-verification"
-	os.Setenv("ENCRYPT_KEY", testPassword)
-	defer os.Unsetenv("ENCRYPT_KEY")
+	_ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", testPassword)
+	defer func() {
+		_ = os.Unsetenv("IMAGE_COPIER_ENCRYPT_KEY")
+	}()
 
 	const numTests = 50
 	testInput := "consistent-input-for-rand-verification"

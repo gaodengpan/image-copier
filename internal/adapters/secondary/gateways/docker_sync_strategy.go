@@ -66,12 +66,12 @@ func generateAuthErrorDiagnostics(registryHost, username string) string {
 		}
 	}
 
-	// Check ENCRYPT_KEY status
-	encryptKey := os.Getenv("ENCRYPT_KEY")
+	// Check IMAGE_COPIER_ENCRYPT_KEY status
+	encryptKey := os.Getenv("IMAGE_COPIER_ENCRYPT_KEY")
 	if encryptKey == "" {
-		diagnostics = append(diagnostics, "ENCRYPT_KEY: not set")
+		diagnostics = append(diagnostics, "IMAGE_COPIER_ENCRYPT_KEY: not set")
 	} else {
-		diagnostics = append(diagnostics, "ENCRYPT_KEY: set")
+		diagnostics = append(diagnostics, "IMAGE_COPIER_ENCRYPT_KEY: set")
 	}
 
 	return fmt.Sprintf("\nAuthentication diagnostic info: %s",

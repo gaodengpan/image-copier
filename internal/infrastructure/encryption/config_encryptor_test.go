@@ -7,9 +7,9 @@ import (
 
 func TestConfigEncryptor(t *testing.T) {
 	// Set up environment variable for testing
-	originalKey := os.Getenv("ENCRYPT_KEY")
-	os.Setenv("ENCRYPT_KEY", "test-key-for-unit-tests-32chars")
-	defer os.Setenv("ENCRYPT_KEY", originalKey) // Restore original value
+	originalKey := os.Getenv("IMAGE_COPIER_ENCRYPT_KEY")
+	_ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", "test-key-for-unit-tests-32chars")
+	defer func() { _ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", originalKey) }() // Restore original value
 
 	// Create a new encryptor
 	encryptor, err := NewConfigEncryptor()
@@ -44,9 +44,9 @@ func TestConfigEncryptor(t *testing.T) {
 
 func TestConfigEncryptorEmptyValue(t *testing.T) {
 	// Set up environment variable for testing
-	originalKey := os.Getenv("ENCRYPT_KEY")
-	os.Setenv("ENCRYPT_KEY", "test-key-for-unit-tests-32chars")
-	defer os.Setenv("ENCRYPT_KEY", originalKey) // Restore original value
+	originalKey := os.Getenv("IMAGE_COPIER_ENCRYPT_KEY")
+	_ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", "test-key-for-unit-tests-32chars")
+	defer func() { _ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", originalKey) }() // Restore original value
 
 	// Create a new encryptor
 	encryptor, err := NewConfigEncryptor()

@@ -93,7 +93,7 @@ func TestConfigShowCommand(t *testing.T) {
 
 	err := cmd.Execute()
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	require.NoError(t, err)
@@ -128,7 +128,7 @@ func TestConfigShowCommandLoadError(t *testing.T) {
 
 	err := cmd.Execute()
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	require.Error(t, err)

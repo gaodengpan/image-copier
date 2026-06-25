@@ -7,9 +7,9 @@ import (
 
 func TestEncryptedConfigFlow(t *testing.T) {
 	// Set up environment variable for testing
-	originalKey := os.Getenv("ENCRYPT_KEY")
-	os.Setenv("ENCRYPT_KEY", "test-key-for-integration-tests-32chars")
-	defer os.Setenv("ENCRYPT_KEY", originalKey) // Restore original value
+	originalKey := os.Getenv("IMAGE_COPIER_ENCRYPT_KEY")
+	_ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", "test-key-for-integration-tests-32chars")
+	defer func() { _ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", originalKey) }() // Restore original value
 
 	// Create a config with sensitive values
 	testToken := "my-test-github-token"
@@ -45,7 +45,9 @@ log_level: "info"
 	if err != nil {
 		t.Fatalf("Failed to write temp config file: %v", err)
 	}
-	defer os.Remove(tempFile) // Clean up
+	defer func() {
+		_ = os.Remove(tempFile)
+	}()
 
 	// Try to load the config with plain values
 	provider := NewEncryptedViperConfigProvider()
@@ -79,9 +81,9 @@ log_level: "info"
 
 func TestEncryptedConfigWithPlainText(t *testing.T) {
 	// Set up environment variable for testing
-	originalKey := os.Getenv("ENCRYPT_KEY")
-	os.Setenv("ENCRYPT_KEY", "test-key-for-integration-tests-32chars")
-	defer os.Setenv("ENCRYPT_KEY", originalKey) // Restore original value
+	originalKey := os.Getenv("IMAGE_COPIER_ENCRYPT_KEY")
+	_ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", "test-key-for-integration-tests-32chars")
+	defer func() { _ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", originalKey) }() // Restore original value
 
 	// Create a config with both encrypted and plain text values
 	plainToken := "plain-text-token"
@@ -109,7 +111,9 @@ registry:
 	if err != nil {
 		t.Fatalf("Failed to write temp config file: %v", err)
 	}
-	defer os.Remove(tempFile) // Clean up
+	defer func() {
+		_ = os.Remove(tempFile)
+	}() // Clean up
 
 	// Try to load the config with mixed values
 	provider := NewEncryptedViperConfigProvider()
@@ -136,9 +140,9 @@ func TestEncryptedConfigMissingKey(t *testing.T) {
 	// This test is tricky since we'd need to have an actual encrypted config
 	// to test the case where the decryption key is missing.
 	// Instead, we'll test that normal config loading works without issues
-	originalKey := os.Getenv("ENCRYPT_KEY")
-	os.Unsetenv("ENCRYPT_KEY")
-	defer os.Setenv("ENCRYPT_KEY", originalKey) // Restore original value
+	originalKey := os.Getenv("IMAGE_COPIER_ENCRYPT_KEY")
+	_ = os.Unsetenv("IMAGE_COPIER_ENCRYPT_KEY")
+	defer func() { _ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", originalKey) }() // Restore original value
 
 	// Create a config with plain values only
 	plainToken := "plain-token"
@@ -156,7 +160,9 @@ github:
 	if err != nil {
 		t.Fatalf("Failed to write temp config file: %v", err)
 	}
-	defer os.Remove(tempFile) // Clean up
+	defer func() {
+		_ = os.Remove(tempFile)
+	}() // Clean up
 
 	// Try to load the config with plain values (no encryption involved)
 	provider := NewEncryptedViperConfigProvider()

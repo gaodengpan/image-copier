@@ -18,6 +18,7 @@ type EncryptedViperConfigProvider struct {
 // NewEncryptedViperConfigProvider creates a new instance of EncryptedViperConfigProvider
 func NewEncryptedViperConfigProvider() *EncryptedViperConfigProvider {
 	v := viper.New()
+	v.SetEnvPrefix("IMAGE_COPIER")
 
 	return &EncryptedViperConfigProvider{
 		viper: v,
@@ -33,17 +34,17 @@ func (evp *EncryptedViperConfigProvider) Load() (*Config, error) {
 	evp.viper.SetDefault("github.workflow_id", "image-copier-v2.yaml")
 
 	// Bind environment variables (errors are ignored as BindEnv typically succeeds)
-	_ = evp.viper.BindEnv("github.owner", "GITHUB_OWNER")
-	_ = evp.viper.BindEnv("github.repo", "GITHUB_REPO")
-	_ = evp.viper.BindEnv("github.token", "GITHUB_TOKEN")
-	_ = evp.viper.BindEnv("github.workflow_id", "GITHUB_WORKFLOW_ID")
-	_ = evp.viper.BindEnv("registry.host", "REGISTRY_HOST")
-	_ = evp.viper.BindEnv("registry.username", "REGISTRY_USERNAME")
-	_ = evp.viper.BindEnv("registry.password", "REGISTRY_PASSWD")
-	_ = evp.viper.BindEnv("registry.namespace", "REGISTRY_NAMESPACE")
-	_ = evp.viper.BindEnv("registry.arch", "REGISTRY_ARCH")
-	_ = evp.viper.BindEnv("registry.os", "REGISTRY_OS")
-	_ = evp.viper.BindEnv("log_level", "LOG_LEVEL")
+	_ = evp.viper.BindEnv("github.owner", "IMAGE_COPIER_GITHUB_OWNER")
+	_ = evp.viper.BindEnv("github.repo", "IMAGE_COPIER_GITHUB_REPO")
+	_ = evp.viper.BindEnv("github.token", "IMAGE_COPIER_GITHUB_TOKEN")
+	_ = evp.viper.BindEnv("github.workflow_id", "IMAGE_COPIER_GITHUB_WORKFLOW_ID")
+	_ = evp.viper.BindEnv("registry.host", "IMAGE_COPIER_REGISTRY_HOST")
+	_ = evp.viper.BindEnv("registry.username", "IMAGE_COPIER_REGISTRY_USERNAME")
+	_ = evp.viper.BindEnv("registry.password", "IMAGE_COPIER_REGISTRY_PASSWD")
+	_ = evp.viper.BindEnv("registry.namespace", "IMAGE_COPIER_REGISTRY_NAMESPACE")
+	_ = evp.viper.BindEnv("registry.arch", "IMAGE_COPIER_REGISTRY_ARCH")
+	_ = evp.viper.BindEnv("registry.os", "IMAGE_COPIER_REGISTRY_OS")
+	_ = evp.viper.BindEnv("log_level", "IMAGE_COPIER_LOG_LEVEL")
 
 	evp.viper.SetConfigType("yaml")
 	evp.viper.SetConfigName("config")
@@ -80,11 +81,11 @@ func (evp *EncryptedViperConfigProvider) Load() (*Config, error) {
 func generateDecryptionDiagnostics(field, value string) string {
 	var diagnostics []string
 
-	// Check if ENCRYPT_KEY is set
-	if os.Getenv("ENCRYPT_KEY") == "" {
-		diagnostics = append(diagnostics, "ENCRYPT_KEY environment variable is not set")
+	// Check if IMAGE_COPIER_ENCRYPT_KEY is set
+	if os.Getenv("IMAGE_COPIER_ENCRYPT_KEY") == "" {
+		diagnostics = append(diagnostics, "IMAGE_COPIER_ENCRYPT_KEY environment variable is not set")
 	} else {
-		diagnostics = append(diagnostics, "ENCRYPT_KEY is set")
+		diagnostics = append(diagnostics, "IMAGE_COPIER_ENCRYPT_KEY is set")
 	}
 
 	// Check value format without exposing content
@@ -102,7 +103,7 @@ func generateDecryptionDiagnostics(field, value string) string {
 	}
 
 	return fmt.Sprintf("decryption failed for field '%s'. Diagnostics: %s. "+
-		"Please verify ENCRYPT_KEY matches the key used for encryption. "+
+		"Please verify IMAGE_COPIER_ENCRYPT_KEY matches the key used for encryption. "+
 		"If using plaintext, ensure the value doesn't start with 'encrypted:'",
 		field, strings.Join(diagnostics, "; "))
 }
@@ -217,15 +218,15 @@ func SafeLoadEncryptedConfig() (*Config, error) {
 		// If it's a decryption error, provide additional guidance
 		if de, ok := err.(*encryption.DecryptionError); ok {
 			// Check if the error is due to missing encryption key
-			envKey := os.Getenv("ENCRYPT_KEY")
+			envKey := os.Getenv("IMAGE_COPIER_ENCRYPT_KEY")
 			if envKey == "" {
-				// If the ENCRYPT_KEY is not set, try to load with a plain config provider
+				// If the IMAGE_COPIER_ENCRYPT_KEY is not set, try to load with a plain config provider
 				plainProvider := NewViperConfigProvider()
 				if plainCfg, plainErr := plainProvider.Load(); plainErr == nil {
 					return plainCfg, nil // Return plain config if decryption fails due to missing key
 				}
 			}
-			return nil, fmt.Errorf("%s - Please ensure the ENCRYPT_KEY environment variable is correctly set and matches the key used for encryption", de.Error())
+			return nil, fmt.Errorf("%s - Please ensure the IMAGE_COPIER_ENCRYPT_KEY environment variable is correctly set and matches the key used for encryption", de.Error())
 		}
 		return nil, err
 	}

@@ -58,13 +58,13 @@ func (s *RegistrySyncStrategy) SyncFromRegistry(ctx context.Context, opts output
 	if err != nil {
 		return errors.NewRegistryError("SyncFromRegistry", "failed to create source auth file", err)
 	}
-	defer os.Remove(srcAuthFile)
+	defer func() { _ = os.Remove(srcAuthFile) }()
 
 	destAuthFile, err := auth.CreateAuthFile(opts.TargetRegistryHost, opts.TargetRegistryUsername, opts.TargetRegistryPassword)
 	if err != nil {
 		return errors.NewRegistryError("SyncFromRegistry", "failed to create destination auth file", err)
 	}
-	defer os.Remove(destAuthFile)
+	defer func() { _ = os.Remove(destAuthFile) }()
 
 	// Use --src-authfile and --dest-authfile to pass credentials securely
 	args := []string{

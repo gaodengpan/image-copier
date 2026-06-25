@@ -90,13 +90,17 @@ func TestMaskToken(t *testing.T) {
 }
 
 func TestLoadConfig_WithEncryption(t *testing.T) {
+	// Isolate config directory to avoid reading real user config
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
 	// Set required environment variables for config validation
-	t.Setenv("GITHUB_OWNER", "test-owner")
-	t.Setenv("GITHUB_REPO", "test-repo")
-	t.Setenv("GITHUB_TOKEN", "test-token")
-	t.Setenv("REGISTRY_HOST", "ghcr.io")
-	t.Setenv("REGISTRY_USERNAME", "test-user")
-	t.Setenv("REGISTRY_PASSWD", "test-password")
+	t.Setenv("IMAGE_COPIER_GITHUB_OWNER", "test-owner")
+	t.Setenv("IMAGE_COPIER_GITHUB_REPO", "test-repo")
+	t.Setenv("IMAGE_COPIER_GITHUB_TOKEN", "test-token")
+	t.Setenv("IMAGE_COPIER_REGISTRY_HOST", "ghcr.io")
+	t.Setenv("IMAGE_COPIER_REGISTRY_USERNAME", "test-user")
+	t.Setenv("IMAGE_COPIER_REGISTRY_PASSWD", "test-password")
 
 	provider := config.DefaultConfigProvider()
 	cfg, err := provider.Load()

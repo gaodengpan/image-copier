@@ -47,6 +47,7 @@ type ViperConfigProvider struct {
 // NewViperConfigProvider creates a new instance of ViperConfigProvider
 func NewViperConfigProvider() *ViperConfigProvider {
 	v := viper.New()
+	v.SetEnvPrefix("IMAGE_COPIER")
 
 	return &ViperConfigProvider{
 		viper: v,
@@ -62,17 +63,17 @@ func (vp *ViperConfigProvider) Load() (*Config, error) {
 	vp.viper.SetDefault("github.workflow_id", "image-copier-v2.yaml")
 
 	// Bind environment variables (errors are ignored as BindEnv typically succeeds)
-	_ = vp.viper.BindEnv("github.owner", "GITHUB_OWNER")
-	_ = vp.viper.BindEnv("github.repo", "GITHUB_REPO")
-	_ = vp.viper.BindEnv("github.token", "GITHUB_TOKEN")
-	_ = vp.viper.BindEnv("github.workflow_id", "GITHUB_WORKFLOW_ID")
-	_ = vp.viper.BindEnv("registry.host", "REGISTRY_HOST")
-	_ = vp.viper.BindEnv("registry.username", "REGISTRY_USERNAME")
-	_ = vp.viper.BindEnv("registry.password", "REGISTRY_PASSWD")
-	_ = vp.viper.BindEnv("registry.namespace", "REGISTRY_NAMESPACE")
-	_ = vp.viper.BindEnv("registry.arch", "REGISTRY_ARCH")
-	_ = vp.viper.BindEnv("registry.os", "REGISTRY_OS")
-	_ = vp.viper.BindEnv("log_level", "LOG_LEVEL")
+	_ = vp.viper.BindEnv("github.owner", "IMAGE_COPIER_GITHUB_OWNER")
+	_ = vp.viper.BindEnv("github.repo", "IMAGE_COPIER_GITHUB_REPO")
+	_ = vp.viper.BindEnv("github.token", "IMAGE_COPIER_GITHUB_TOKEN")
+	_ = vp.viper.BindEnv("github.workflow_id", "IMAGE_COPIER_GITHUB_WORKFLOW_ID")
+	_ = vp.viper.BindEnv("registry.host", "IMAGE_COPIER_REGISTRY_HOST")
+	_ = vp.viper.BindEnv("registry.username", "IMAGE_COPIER_REGISTRY_USERNAME")
+	_ = vp.viper.BindEnv("registry.password", "IMAGE_COPIER_REGISTRY_PASSWD")
+	_ = vp.viper.BindEnv("registry.namespace", "IMAGE_COPIER_REGISTRY_NAMESPACE")
+	_ = vp.viper.BindEnv("registry.arch", "IMAGE_COPIER_REGISTRY_ARCH")
+	_ = vp.viper.BindEnv("registry.os", "IMAGE_COPIER_REGISTRY_OS")
+	_ = vp.viper.BindEnv("log_level", "IMAGE_COPIER_LOG_LEVEL")
 
 	vp.viper.SetConfigType("yaml")
 	vp.viper.SetConfigName("config")

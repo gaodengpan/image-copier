@@ -7,9 +7,9 @@ import (
 
 func TestEncryptionDecryptionRoundTrip(t *testing.T) {
 	// Set up environment variable for testing
-	originalKey := os.Getenv("ENCRYPT_KEY")
-	os.Setenv("ENCRYPT_KEY", "test-key-for-security-tests-32chars")
-	defer os.Setenv("ENCRYPT_KEY", originalKey) // Restore original value
+	originalKey := os.Getenv("IMAGE_COPIER_ENCRYPT_KEY")
+	_ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", "test-key-for-security-tests-32chars")
+	defer func() { _ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", originalKey) }() // Restore original value
 
 	testValues := []string{
 		"simple text",
@@ -59,9 +59,9 @@ func TestEncryptionDecryptionRoundTrip(t *testing.T) {
 
 func TestDifferentInputsProduceDifferentOutputs(t *testing.T) {
 	// Set up environment variable for testing
-	originalKey := os.Getenv("ENCRYPT_KEY")
-	os.Setenv("ENCRYPT_KEY", "test-key-for-security-tests-32chars")
-	defer os.Setenv("ENCRYPT_KEY", originalKey) // Restore original value
+	originalKey := os.Getenv("IMAGE_COPIER_ENCRYPT_KEY")
+	_ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", "test-key-for-security-tests-32chars")
+	defer func() { _ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", originalKey) }() // Restore original value
 
 	testValues := []string{
 		"first value",
@@ -92,9 +92,9 @@ func TestDifferentInputsProduceDifferentOutputs(t *testing.T) {
 
 func TestDecryptionWithWrongKey(t *testing.T) {
 	// Set up environment variable for testing
-	originalKey := os.Getenv("ENCRYPT_KEY")
-	os.Setenv("ENCRYPT_KEY", "test-key-first-32chars-length-test")
-	defer os.Setenv("ENCRYPT_KEY", originalKey) // Restore original value
+	originalKey := os.Getenv("IMAGE_COPIER_ENCRYPT_KEY")
+	_ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", "test-key-first-32chars-length-test")
+	defer func() { _ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", originalKey) }() // Restore original value
 
 	testValue := "test value for wrong key test"
 
@@ -105,8 +105,8 @@ func TestDecryptionWithWrongKey(t *testing.T) {
 	}
 
 	// Temporarily set a different key
-	os.Setenv("ENCRYPT_KEY", "different-key-32chars-test-value")
-	defer os.Setenv("ENCRYPT_KEY", originalKey) // Restore original value
+	_ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", "different-key-32chars-test-value")
+	defer func() { _ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", originalKey) }() // Restore original value
 
 	// Attempt to decrypt with different key (should fail)
 	_, err = Decrypt(encrypted)
@@ -117,9 +117,9 @@ func TestDecryptionWithWrongKey(t *testing.T) {
 
 func TestTamperingDetection(t *testing.T) {
 	// Set up environment variable for testing
-	originalKey := os.Getenv("ENCRYPT_KEY")
-	os.Setenv("ENCRYPT_KEY", "test-key-for-tampering-tests-32chars")
-	defer os.Setenv("ENCRYPT_KEY", originalKey) // Restore original value
+	originalKey := os.Getenv("IMAGE_COPIER_ENCRYPT_KEY")
+	_ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", "test-key-for-tampering-tests-32chars")
+	defer func() { _ = os.Setenv("IMAGE_COPIER_ENCRYPT_KEY", originalKey) }() // Restore original value
 
 	testValue := "test value for tampering detection"
 	encrypted, err := Encrypt(testValue, "test-key-for-tampering-tests-32chars")

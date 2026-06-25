@@ -83,7 +83,9 @@ func (a *SkopeoAdapter) withAuthFile(imageID, username, password string, fn func
 	if err != nil {
 		return fmt.Errorf("%w: %v", errAuthFileCreation, err)
 	}
-	defer os.Remove(authFile)
+	defer func() {
+		_ = os.Remove(authFile)
+	}()
 	return fn(authFile)
 }
 
